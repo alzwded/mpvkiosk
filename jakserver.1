@@ -27,12 +27,18 @@ Pick a different port than 8080.
 .I jakserver
 is the most basic HTTP server I could put together.
 .PP
+It doesn't do much by itself. It does some basic command line argument parsing, binds a socket, accepts connections, and does some basic HTTP request parsing.
+.PP
 It listens for HTTP/1.1 requests. It checks the 
 .I "Content-Length"
-header. It accepts form data. It does nothing by itself other than the most
-basic request parsing and immediately hands off execution to the script. It forks when accepting a connection.
+header, and, if present, tries to read a body of that length. After it considers it has read enough of your request, and it didn't decide you're trying to scam it, it hands off execution to the
+.IR "Handler Script" .
 .PP
-You can think of it as a "cgi only micro http server". In fact, it does nothing without a handler program.
+You can think of it as a "cgi only micro http server", even though it makes no effort to be compatible with the `CGI' spec (at least not right now). See
+.I "HANDLER SCRIPT"
+for the interface between
+.I jakserver
+and the handler program.
 .SH "HANDLER SCRIPT"
 The
 .I handler_script
@@ -46,7 +52,7 @@ The headers and body (if any) are in the
 .I REQHEADERS
 and
 .I REQBODY
-environment variable.
+environment variables.
 .PP
 It is expected that the script write out an HTTP response on standard output. It must always write out an HTTP response to standard output, don't leave clients hanging!
 .PP
@@ -66,18 +72,16 @@ Vlad Meșco <vlad.mesco@gmail.com>
 
 This project started life at <https://github.com/alzwded/mpvkiosk>
 .SH LIMITATIONS
-Be warned, this is not a proper and conformant HTTP server. It merely tries
-to look like one to the extent that accessing it from a browser allows one
-to interact with some service. Use it for prototyping only.
+Be warned, this is not a proper and conformant HTTP server. It merely tries to look like one to the extent that accessing it from a browser allows one to interact with some service. Use it for prototyping only.
 .PP
 It only reads the
 .I "Content-Length"
-header, nothing else.
+header, nothing else. If `Content-Length' is undefined or 0, it does not read the body.
 .PP
 It assumes and only accepts
 .IR HTTP/1.1 .
 .PP
-IPV4 only.
+IPv4 only. Maybe IPv6 one day, but that just adds unnecessary complexity, given its present day requirements.
 .PP
 The
 .I "handler_script"
@@ -87,19 +91,15 @@ or
 .IR "/var/www/cgi/handler.sh" .
 It must be executable.
 .PP
-The
+The server makes no effort to split the
 .I PATH
 (2nd) argument of the
-.I "handler_script"
-will contain the query string. This shouldn't be an issue, as you can search
-for 
+.IR "handler_script" .
+This shouldn't be an issue, as you can search for 
 .B "?"
-and separate the query/parameters from your actual path.
+and separate the query/parameters from your actual path. And also deal with `;', which is also a way to add parameters to URLs.
 .PP
-Because the body and the headers are passed through environment variables, the request can only be so big.
-It depends on your system.
-At least 100KB, usually 2MB.
-The body is additionally limitted to
+Because the body and the headers are passed through environment variables, the request can only be so big. It depends on your system. At least 100KB, usually 2MB. The body is additionally limitted to
 .I CONTENT_LENGTH_LIMIT
 (1MB) by the server itself.
 .PP

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 # Copyright 2024 Vlad Mesco
 # 
 # Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
@@ -265,10 +266,11 @@ elif [[ "$REQPATH" = "/browse" ]] ; then
         PP="${kvs[path]}/$f"
         PP="${PP%/}"
         PP="${PP//\/\//\/}"
+        ENCODEDPP="${PP//\'/&\#39;}"
         if [[ -d "$PP" ]] ; then
-            files[${#files[@]}]="<li><a href='/browse?path=${PP}'>$f</a></li>"
+            files[${#files[@]}]="<li><a href='/browse?path=${ENCODEDPP}'>$f</a></li>"
         elif [ -f "$PP" ] && supported "$PP" ; then
-            files[${#files[@]}]="<li><form style='display:inline' action='/controls/loadfile' method='POST'><input type='hidden' name='path' value='${PP}'/><input type='submit' value='${f}'/></form></li>"
+            files[${#files[@]}]="<li><form style='display:inline' action='/controls/loadfile' method='POST'><input type='hidden' name='path' value='${ENCODEDPP}'/><input type='submit' value='${f//\'/&\#39;}'/></form></li>"
         else
             files[${#files[@]}]="<li>$f</li>"
         fi

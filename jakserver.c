@@ -519,7 +519,7 @@ int main(int argc, char* argv[])
 
     struct sockaddr_in sockaddr = {
         AF_INET,
-        htons(8080),
+        htons(port),
         { iface }
     };
     hr = bind(sockfd, (struct sockaddr*)&sockaddr, sizeof(sockaddr));

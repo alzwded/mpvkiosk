@@ -20,6 +20,10 @@ The web interface ([*handler.sh*](./handler.sh)) is a barebones remote control.
 
 ![web player](./screenshot.png)
 
+You can paste a local path or a weblink (supported by *mpv(1)* by way of *yt-dlp(1)*) and hit `Load` to play. Alternatively, you can browse the local file system; video and audio files will have a button to start playing. Other than that, play/pause, stop, seek etc are pretty self explanatory.
+
+The `Turn Off` button is a panic button which shuts down the remote mpv in case anything went haywire. Or, just if you want to shut down that process. The stop button merely instructs mpv to stop playing, the process continues to hang around in the background.
+
 Installation
 ------------
 

@@ -296,6 +296,8 @@ void execute(int conn, struct parser* parser)
         err(EXIT_FAILURE, "execlp");
 }
 
+/*
+   // leaving this around in case I want to log children exiting
 void sigchld(int _ignored)
 {
     (void)_ignored;
@@ -304,6 +306,7 @@ void sigchld(int _ignored)
     while((pid = waitpid(-1, &wstatus, WNOHANG)) > 0)
         ;
 }
+*/
 
 void sighandler(int _ignored)
 {
@@ -539,11 +542,14 @@ int main(int argc, char* argv[])
     signal(SIGQUIT, sighandler);
 
     struct sigaction sa;
-    sa.sa_handler = sigchld;
+    //sa.sa_handler = sigchld;
+    sa.sa_handler = SIG_DFL;
     sigemptyset(&sa.sa_mask);
     // if SA_RESTART isn't set, it interrupts accept(3) once, then
     // we never get another SIGCHLD ever again.
-    sa.sa_flags = SA_RESTART;
+    // SA_NOCLDWAIT with SIG_DFL is functinoally equivalent to reaping children,
+    // so skip having to handle SIGCHLD
+    sa.sa_flags = SA_RESTART|SA_NOCLDWAIT;
     if(sigaction(SIGCHLD, &sa, NULL) == -1)
         err(EXIT_FAILURE, "sigaction");
 

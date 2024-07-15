@@ -542,6 +542,7 @@ int main(int argc, char* argv[])
     signal(SIGQUIT, sighandler);
 
     struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
     //sa.sa_handler = sigchld;
     sa.sa_handler = SIG_DFL;
     sigemptyset(&sa.sa_mask);

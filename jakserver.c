@@ -8,6 +8,11 @@
 // 
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// -std=gnu99 would set this to >= 600
+#ifndef _XOPEN_SOURCE
+# define _XOPEN_SOURCE 600
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -36,6 +41,16 @@
 // since this runs on lan, it might as well be <5...
 #ifndef TIMEOUT_LIMIT
 # define TIMEOUT_LIMIT 30
+#endif
+
+// safety precaution for the handler script;
+// makes sure to smother it if it goes haywire, but also
+// don't bother with clients that take too long to accept
+// the response.
+// define to <= 0 to disable and handle timeouts in the
+// handler script itself
+#ifndef HANDLER_TIMEOUT_LIMIT
+# define HANDLER_TIMEOUT_LIMIT TIMEOUT_LIMIT
 #endif
 
 // server socket; needs to be closed by child processes, or self
@@ -170,8 +185,6 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             parser->ip = (p1 - buf) + 1;
             /*falthrough*/
         case HEADERS:
-            // parse headers; should end with CRLFCRLF
-            parser->headers = strdup(buf + parser->ip);
             // p1 will point to the begining of a header line, of the form
             // H: v\r\n
             p1 = buf + parser->ip;
@@ -224,6 +237,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 // p1 now points to the next header
                 p1 = p2 + 1;
             }
+            parser->headers = strdup(buf + parser->ip); // dup headers, because buf may be reallocated for larger requests
             parser->ip = p1 - buf;
             parser->state = BODY;
             /*fallthrough*/
@@ -262,6 +276,10 @@ void execute(int conn, struct parser* parser)
     // set headers and body env vars
     setenv("REQHEADERS", parser->headers, 1);
     if(parser->body) setenv("REQBODY", parser->body, 1);
+#if HANDLER_TIMEOUT_LIMIT > 0
+    // set an alarm for the handler script
+    alarm(HANDLER_TIMEOUT_LIMIT);
+#endif
     // exec to the handler script
     int hr = execlp(handler, handler, parser->method, parser->path, NULL);
     if(hr == -1)
@@ -280,8 +298,9 @@ void sigchld(int)
 }
 */
 
-void sighandler(int)
+void sighandler(int _ignored)
 {
+    (void)_ignored; // keep some compilers happy
     exit(0);
 }
 

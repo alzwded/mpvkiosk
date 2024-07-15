@@ -296,17 +296,14 @@ void execute(int conn, struct parser* parser)
         err(EXIT_FAILURE, "execlp");
 }
 
-/*
-   // disabled since unnecessary
-   // but if you want to enable it, compile with -std=gnu99
-void sigchld(int)
+void sigchld(int _ignored)
 {
+    (void)_ignored;
     int wstatus;
     pid_t pid;
     while((pid = waitpid(-1, &wstatus, WNOHANG)) > 0)
         ;
 }
-*/
 
 void sighandler(int _ignored)
 {
@@ -541,14 +538,14 @@ int main(int argc, char* argv[])
     signal(SIGINT, sighandler);
     signal(SIGQUIT, sighandler);
 
-    /*
     struct sigaction sa;
     sa.sa_handler = sigchld;
     sigemptyset(&sa.sa_mask);
+    // if SA_RESTART isn't set, it interrupts accept(3) once, then
+    // we never get another SIGCHLD ever again.
     sa.sa_flags = SA_RESTART;
     if(sigaction(SIGCHLD, &sa, NULL) == -1)
         err(EXIT_FAILURE, "sigaction");
-        */
 
     // main loop
 

@@ -41,7 +41,8 @@ for the interface between
 and the handler program.
 .SH CONFIGURATION
 .I jakserver
-does not have any runtime configuration --apart from the command line arguments--, but it does have compile time arguments.
+does not have any runtime configuration --apart from the command line arguments--, but it does have compile time arguments. These can be tweaked through
+.IR CFLAGS .
 .TP
 .BI CONTENT_LENGTH_LIMIT " 1048576"
 Rejects requests whose
@@ -53,10 +54,18 @@ Closes the socket if the client takes longer than this amount of seconds to send
 .TP
 .BI HANDLER_TIMEOUT_LIMIT " TIMEOUT_LIMIT"
 If this is > 0, sets an
-.IR alarm (3)
+.BR alarm (3)
 before calling
-.IR exec (3)
+.BR exec (3)
 to the handler script. The value is in seconds.
+.TP
+.BI MAX_BACKLOG " 10"
+.I backlog
+parameter passed to
+.BR listen (3).
+.PP
+Any other configuration is the responsibility of your
+.IR "HANDLER SCRIPT" .
 .SH "HANDLER SCRIPT"
 The
 .I handler_script
@@ -77,7 +86,7 @@ It is expected that the script write out an HTTP response on standard output. It
 This is usually a shell script, but there's nothing wrong with coding up a web application in pure C/C++!
 .PP
 If compiled with
-.IR HANDLER_TIMEOUT_LIMIT "> 0"
+.IR HANDLER_TIMEOUT_LIMIT " > 0"
 then the handler program will receive a
 .I SIGALRM
 after that many seconds if it doesn't finish until then.

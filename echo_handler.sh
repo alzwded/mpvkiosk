@@ -25,7 +25,7 @@ fi
 # echo :-)
 cat <<EOT
 HTTP/1.1 200
-Cotnent-Type: text/html
+Content-Type: text/html;charset=UTF-8
 
 <!DOCTYPE html>
 <html><head><title>${REQPATH}</title></head>

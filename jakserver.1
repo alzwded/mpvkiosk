@@ -81,11 +81,21 @@ and
 .I REQBODY
 environment variables.
 .PP
+If
+.I jakserver
+is compiled with
+.I HANDLER_TIMEOUT_LIMIT
+> 0, then the handler program will receive
+.I SIGALRM
+after the specified amount of time.
+.PP
 It is expected that the script write out an HTTP response on standard output. It must always write out an HTTP response to standard output, don't leave clients hanging!
 .PP
 This is usually a shell script, but there's nothing wrong with coding up a web application in pure C/C++!
 .PP
-If compiled with
+If 
+.I jakserver
+was compiled with
 .IR HANDLER_TIMEOUT_LIMIT " > 0"
 then the handler program will receive a
 .I SIGALRM

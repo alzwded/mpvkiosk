@@ -458,6 +458,18 @@ void help(const char* argv0)
             ,
             argv0,
             VERSION);
+
+    printf("\nCompilation options:\n"
+            "MAX_BACKLOG=%d\n"
+            "CONTENT_LENGTH_LIMIT=%d\n"
+            "TIMEOUT_LIMIT=%d\n"
+            "HANDLER_TIMEOUT_LIMIT=%d\n"
+            ,
+            MAX_BACKLOG,
+            CONTENT_LENGTH_LIMIT,
+            TIMEOUT_LIMIT,
+            HANDLER_TIMEOUT_LIMIT);
+
     exit(2);
 }
 

@@ -212,7 +212,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 }
                 // else, find the colon
                 p3 = strchr(p1, ':');
-                if(p3 == NULL) continue;
+                if(p3 == NULL) goto undop2;
                 *p3 = '\0';
                 ++p3;
 
@@ -232,9 +232,12 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 }
 
                 // undo nullifications to allow someone else to read this garbage
+undop3:
+                p3[-1] = ':';
+undop2:
                 *p2 = '\n';
                 if(p2WasCRLF) p2[-1] = '\r';
-                p3[-1] = ':';
+nextheader:
 
                 // p1 now points to the next header
                 p1 = p2 + 1;

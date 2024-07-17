@@ -185,6 +185,8 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             parser->ip = (p1 - buf) + 1;
             /*falthrough*/
         case HEADERS:
+            // parse headers, should end with CLRF
+
             // p1 will point to the begining of a header line, of the form
             // H: v\r\n
             p1 = buf + parser->ip;

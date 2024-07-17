@@ -112,7 +112,8 @@ say() {
 # start it itself; perhaps remove startdaemon, ison and turnof in that case
 startdaemon() {
     ( DISPLAY=${DISPLAY:-:0} ${MPVCMDLINE} 1>&2 & ) &
-    sleep 1
+    # it won't set up the socket immediately, so wait
+    sleep 5
 }
 # check if mpv is running as intended
 ison() {

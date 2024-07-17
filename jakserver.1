@@ -173,6 +173,10 @@ If you want to accept either large or otherwise binary requests, do use the
 .BI "-0" " dirpath"
 option. The headers are still passed through env vars, but the bulk of the data should be the body, and that's dealt with.
 .PP
+The HTTP request parser expects the
+.I Content-Length
+header to fit on one line, without continuation.
+.PP
 .B "DO NOT"
 under any circumstances use this for any production purposes. You have been warned. Use something tried and tested whose project goals include
 .B security

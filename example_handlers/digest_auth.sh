@@ -20,7 +20,7 @@
 # the hashing algorithm du jour is
 
 # run with
-#     jakserver -x ./echo_env_handler.sh
+#     jakserver -x ./digest_auth.sh
 #
 # experiment with
 #     curl --digest -u jim:password -v localhost:8080

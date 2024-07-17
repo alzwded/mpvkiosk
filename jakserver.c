@@ -33,8 +33,8 @@
 #include <arpa/inet.h>
 
 // don't bother with POST requests bigger than 1MB
-#ifndef CONTENT_LENGTH_LIMIT
-# define CONTENT_LENGTH_LIMIT (1 * 1024 * 1024)
+#ifndef REQUEST_SIZE_LIMIT
+# define REQUEST_SIZE_LIMIT (1 * 1024 * 1024)
 #endif
 
 // don't bother with clients that take this long to say anything.
@@ -69,12 +69,6 @@ unsigned iface = INADDR_ANY;
 unsigned port = 8080;
 // be more chatty
 int verbose = 1;
-
-// passed to atexit(3)
-void myatexit()
-{
-    if(gsock) close(gsock);
-}
 
 // used by parser
 static const char* KNOWN_METHODS[] = {
@@ -130,6 +124,10 @@ enum parse_return {
 // ERROR means we don't want to talk to the client anymore
 int parse(struct parser* parser, char* buf, size_t sbuf)
 {
+    if(verbose >= 2) {
+        fprintf(stderr, "%d: entered parser, state %d sbuf %zd\n", getpid(), parser->state, sbuf);
+    }
+
     char* end = buf + sbuf;
     // work pointers
     char* p1, *p2, *p3;
@@ -147,8 +145,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             // find the end of the request line
             while(p1 < end && *p1 != '\n') ++p1;
             if(p1 >= end) {
-                // if it's not a line, ignore the client
-                return ERROR;
+                return MORE;
             }
             *p1 = '\0';
             // check for known request methods;
@@ -188,6 +185,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             }
 
             parser->ip = (p1 - buf) + 1;
+            parser->state = HEADERS;
             /*falthrough*/
         case HEADERS:
             // parse headers, should end with CLRF
@@ -200,7 +198,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 p2 = p1;
                 while(p2 < end && *p2 != '\n') ++p2;
                 if(p2 >= end) {
-                    return ERROR;
+                    return MORE;
                 }
                 *p2 = '\0';
                 if(p2 > p1 && p2[-1] == '\r') {
@@ -247,6 +245,8 @@ nextheader:
                 // p1 now points to the next header
                 p1 = p2 + 1;
             }
+            if(parser->state == HEADERS) return MORE;
+
             parser->headers = strdup(buf + parser->ip); // dup headers, because buf may be reallocated for larger requests
             parser->ip = p1 - buf;
             parser->state = BODY;
@@ -258,8 +258,6 @@ nextheader:
                 return DONE;
             } else {
                 if(parser->contentLength < 0) return ERROR;
-                // if trying to be given more content than we want, ignore the client
-                if(parser->contentLength > CONTENT_LENGTH_LIMIT) return ERROR;
                 // if the buffer doesn't contain all the data we need, tell
                 // the caller we want more
                 if(sbuf - parser->ip < parser->contentLength) {
@@ -282,14 +280,10 @@ void execute(int conn, struct parser* parser)
     // make the socket be the process's stdout
     dup2(conn, STDOUT_FILENO);
     close(conn);
-    if(verbose) fprintf(stderr, "%d: Executing %s %s\n", conn, parser->method, parser->path);
+    if(verbose) fprintf(stderr, "%d: Executing %s %s\n", getpid(), parser->method, parser->path);
     // set headers and body env vars
     setenv("REQHEADERS", parser->headers, 1);
     if(parser->body) setenv("REQBODY", parser->body, 1);
-#if HANDLER_TIMEOUT_LIMIT > 0
-    // set an alarm for the handler script
-    alarm(HANDLER_TIMEOUT_LIMIT);
-#endif
     // exec to the handler script
     int hr = execlp(handler, handler, parser->method, parser->path, NULL);
     if(hr == -1)
@@ -312,6 +306,22 @@ void sighandler(int _ignored)
 {
     (void)_ignored;
     exit(0);
+}
+
+void handler_timedout(int _ignored)
+{
+    (void)_ignored;
+    static char buf[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ':', ' ' };
+    int pid = getpid(), p = 14;
+    while(pid > 0) {
+        buf[--p] = pid % 10 + '0';
+        pid /= 10;
+    }
+    if(verbose) {
+        write(fileno(stderr), &buf[p], 16 - p);
+        write(fileno(stderr), "timed out\n", strlen("timed out\n"));
+    }
+    _exit(1);
 }
 
 // in-process, quick response function for clients, in case parsing failed
@@ -342,13 +352,13 @@ void send_message(int conn, int code, const char* msg)
 
 void send_error(int conn)
 {
-    if(verbose) fprintf(stderr, "%d: rejected\n", conn);
+    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
     send_message(conn, 500, "Error");
 }
 
 void send_bad_request(int conn, const char* msg)
 {
-    if(verbose) fprintf(stderr, "%d: rejected\n", conn);
+    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
     send_message(conn, 400, msg);
 }
 
@@ -359,7 +369,7 @@ void send_done(int conn)
 
 // handle connection
 // spawns child process to do the actual handling
-void handle(int conn)
+void handle(int conn, struct in_addr client_addr)
 {
     pid_t newpid = fork();
     if(-1 == newpid) {
@@ -378,18 +388,28 @@ void handle(int conn)
         // - execs bash
         // - exits
         // so no need to worry about free
+
+        if(verbose) fprintf(stderr, "%d: Handling request from %s\n", getpid(), inet_ntoa(client_addr));
+
         close(gsock);
         gsock = 0;
+
+        // set timer now to not deal with timeouts in select
+#if HANDLER_TIMEOUT_LIMIT > 0
+        // set an alarm for the handler script
+        alarm(HANDLER_TIMEOUT_LIMIT);
+        signal(SIGALRM, handler_timedout);
+#endif
     }
 
-
     fd_set rfds;
-    struct timeval tv;
     int retval;
 
     // read up to 1k blocks, and try parsing the request as we go
 
     char* buf = malloc(1025);
+    if(!buf)
+        err(EXIT_FAILURE, "malloc");
     char* pbuf = buf;
     ssize_t sbuf = 0;
     buf[1024] = '\0';
@@ -401,11 +421,7 @@ void handle(int conn)
         FD_ZERO(&rfds);
         FD_SET(conn, &rfds);
 
-        memset(&tv, 0, sizeof(struct timeval));
-        tv.tv_sec = TIMEOUT_LIMIT;
-        tv.tv_usec = 0;
-
-        retval = select(conn+1, &rfds, NULL, NULL, &tv);
+        retval = select(conn+1, &rfds, NULL, NULL, NULL);
         if(-1 == retval)
             err(EXIT_FAILURE, "select");
         if(0 == retval) exit(1); // client didn't want to write to us, ignore
@@ -415,17 +431,27 @@ void handle(int conn)
             if(errno == EAGAIN) continue;
             err(EXIT_FAILURE, "recv");
         }
-        sbuf += bytes;
-        pbuf[bytes] = '\0';
+        if(bytes > 0) {
+            sbuf += bytes;
+            pbuf[bytes] = '\0';
+        }
+        if(verbose >= 2)
+            fprintf(stderr, "%d: DEBUG: bytes %zd buf %s pbuf %s pbuf-buf %zd\n", getpid(), bytes, buf, pbuf, pbuf - buf);
 
         int what = parse(&parser, buf, sbuf);
         if(what == MORE) {
-            buf = realloc(buf, sbuf + 1025);
-            pbuf = buf + sbuf;
             if(bytes == 0) {
                 // EOF
                 send_bad_request(conn, "Expected more data");
             }
+            if(sbuf + 1025 > REQUEST_SIZE_LIMIT) {
+                // too big
+                send_bad_request(conn, "Request too large");
+            }
+            buf = realloc(buf, sbuf + 1025);
+            if(!buf)
+                err(EXIT_FAILURE, "realloc");
+            pbuf = buf + sbuf;
             continue;
         } else if(what == DONE) {
             execute(conn, &parser);
@@ -438,11 +464,12 @@ void handle(int conn)
 
 void help(const char* argv0)
 {
-    printf("Usage: %s -x handler_script [-H ip4] [-p port] [-q]\n"
+    printf("Usage: %s -x handler_script [-H ip4] [-p port] [-q] [-v]\n"
             "Version %s\n"
             "by Vlad Mesco\n\n"
             "\t-h                 print this message\n"
-            "\t-q                 quiet, turn off verbose logging\n"
+            "\t-q                 quiet, prints less\n"
+            "\t-v                 verbose; may be repeated\n"
             "\t-H ip4             interface to bind; default 0.0.0.0\n"
             "\t-p port            which port to bind; default 8080\n"
             "\t-x handler_script  path to an executable script to handle requests\n"
@@ -461,12 +488,12 @@ void help(const char* argv0)
 
     printf("\nCompilation options:\n"
             "MAX_BACKLOG=%d\n"
-            "CONTENT_LENGTH_LIMIT=%d\n"
+            "REQUEST_SIZE_LIMIT=%d\n"
             "TIMEOUT_LIMIT=%d\n"
             "HANDLER_TIMEOUT_LIMIT=%d\n"
             ,
             MAX_BACKLOG,
-            CONTENT_LENGTH_LIMIT,
+            REQUEST_SIZE_LIMIT,
             TIMEOUT_LIMIT,
             HANDLER_TIMEOUT_LIMIT);
 
@@ -476,13 +503,14 @@ void help(const char* argv0)
 int main(int argc, char* argv[])
 {
     int opt;
-    while((opt = getopt(argc, argv, "H:p:x:hq")) != -1) {
+    while((opt = getopt(argc, argv, "H:p:x:hqv")) != -1) {
         switch(opt) {
             case 'h': help(argv[0]); return 2;
             case 'x': handler = strdup(optarg); break;
             case 'H': iface = inet_addr(optarg); break;
             case 'p': port = atoi(optarg); break;
-            case 'q': verbose = 0; break;
+            case 'q': verbose--; break;
+            case 'v': verbose++; break;
             default:
                       fprintf(stderr, "Unknown flag %c\n", opt);
                       help(argv[0]);
@@ -531,11 +559,10 @@ int main(int argc, char* argv[])
         err(EXIT_FAILURE, "listen");
 
     gsock = sockfd;
-    atexit(myatexit);
 
     if(verbose) {
         char* host = inet_ntoa(sockaddr.sin_addr);
-        fprintf(stderr, "Listening on %s:%u\n", host, port);
+        if(verbose) fprintf(stderr, "Listening on %s:%u\n", host, port);
     }
 
     signal(SIGINT, sighandler);
@@ -567,10 +594,6 @@ int main(int argc, char* argv[])
             continue;
         }
 
-        if(verbose) {
-            fprintf(stderr, "Got a connection %d from %s\n", conn, inet_ntoa(client.sin_addr));
-        }
-
-        handle(conn);
+        handle(conn, client.sin_addr);
     }
 }

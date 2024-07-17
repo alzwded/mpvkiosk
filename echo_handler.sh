@@ -12,6 +12,9 @@
 
 # example handler program for jakserver(1)
 
+trap 'echo exited 1>&2' EXIT
+set -x
+
 REQMETHOD="$1"
 REQPATHANDQUERY="$2"
 if echo "$REQPATHANDQUERY" | grep -q '\?' ; then

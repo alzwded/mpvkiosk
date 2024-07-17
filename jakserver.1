@@ -3,7 +3,7 @@
 jakserver \- the most basic pseudo http server with requests passed off to a shell script
 .SH SYNOPSYS
 .I jakserver
--x handler_script [-H ip] [-p port] [-q]
+-x handler_script [-H ip] [-p port] [-q] [-v]
 .SH OPTIONS
 .TP
 .BI -h
@@ -16,6 +16,9 @@ for details on its interface.
 .TP
 .BI -q
 Quiet mode. Prints out less stuff to standard error.
+.TP
+.BI -v
+Verbose mode. Prints debug information to standard error.
 .TP
 .BI -H " ip"
 Interface to bind. Default 
@@ -44,10 +47,8 @@ and the handler program.
 does not have any runtime configuration --apart from the command line arguments--, but it does have compile time arguments. These can be tweaked through
 .IR CFLAGS .
 .TP
-.BI CONTENT_LENGTH_LIMIT " 1048576"
-Rejects requests whose
-.I "Content-Length"
-is larger than this value. Value is in bytes.
+.BI REQUEST_SIZE_LIMIT " 1048576"
+Rejects requests whose larger than this value. Value is in bytes.
 .TP
 .BI TIMEOUT_LIMIT " 30"
 Closes the socket if the client takes longer than this amount of seconds to send the request.
@@ -142,8 +143,8 @@ This shouldn't be an issue, as you can search for
 .B "?"
 and separate the query/parameters from your actual path. And also deal with `;', which is also a way to add parameters to URLs.
 .PP
-Because the body and the headers are passed through environment variables, the request can only be so big. It depends on your system. At least 100KB, usually 2MB. The body is additionally limitted to
-.I CONTENT_LENGTH_LIMIT
+Because the body and the headers are passed through environment variables, the request can only be so big. It depends on your system. At least 100KB, usually 2MB. The request is additionally limitted to
+.I REQUEST_SIZE_LIMIT
 (1MB) by the server itself.
 .PP
 .B "DO NOT"

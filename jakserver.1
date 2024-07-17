@@ -147,5 +147,9 @@ Because the body and the headers are passed through environment variables, the r
 .I REQUEST_SIZE_LIMIT
 (1MB) by the server itself.
 .PP
+Because the body and the headers are passed as text, you cannot easily accept binary data. For example, it will be truncated at the first
+.IR NULL .
+This will maybe be improved upon in a future version.
+.PP
 .B "DO NOT"
 under any circumstances use this for any production purposes. You have been warned.

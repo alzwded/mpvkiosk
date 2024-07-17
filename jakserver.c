@@ -265,6 +265,9 @@ nextheader:
                 } else {
                     // else, we're done; pass the parser to execute()
                     parser->body = buf + parser->ip;
+                    // body[contentLength] should not be out of bounds, we shoul dhave
+                    // overallocated by a byte for this purpose specifically
+                    parser->body[parser->contentLength] = '\0';
                     return DONE;
                 }
             }

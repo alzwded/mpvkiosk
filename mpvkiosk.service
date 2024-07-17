@@ -4,7 +4,7 @@ Description=sample systemd unit for mpvkiosk
 [Service]
 User=pi
 ExecStart=jakserver -x /var/www/handler.sh
-ExecStop=kill -3 `pgrep -fx 'jakserver -x /var/www/handler.sh'`
+ExecStop=kill -2 `pgrep -fx 'jakserver -x /var/www/handler.sh'`
 StandardOutput=journal
 
 [Install]

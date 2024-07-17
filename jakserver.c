@@ -280,6 +280,11 @@ void sigchld(int)
 }
 */
 
+void sighandler(int)
+{
+    exit(0);
+}
+
 // in-process, quick response function for clients, in case parsing failed
 void send_message(int conn, int code, const char* msg)
 {
@@ -491,6 +496,9 @@ int main(int argc, char* argv[])
         char* host = inet_ntoa(sockaddr.sin_addr);
         fprintf(stderr, "Listening on %s:%u\n", host, port);
     }
+
+    signal(SIGINT, sighandler);
+    signal(SIGQUIT, sighandler);
 
     /*
     struct sigaction sa;

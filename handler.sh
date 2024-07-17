@@ -29,7 +29,7 @@ MPVCMDLINE="mpv --terminal=no --no-osc --input-ipc-server=~/mpv.sock --idle=yes"
 error() {
     cat <<EOT
 HTTP/1.1 $1
-Cotnent-Type: text/html
+Content-Type: text/html;charset=UTF-8
 Cache-Control: no-cache
 
 <!DOCTYPE html>
@@ -136,7 +136,7 @@ render_main_page() {
     # echo :-)
     cat <<EOT
 HTTP/1.1 200
-Cotnent-Type: text/html
+Content-Type: text/html;charset=UTF-8
 Cache-Control: no-cache
 
 <!DOCTYPE html>
@@ -348,7 +348,7 @@ elif [[ "$REQPATH" = "/browse" ]] ; then
     # render response and exit
     cat <<EOT
 HTTP/1.1 200
-Cotnent-Type: text/html
+Content-Type: text/html;charset=UTF-8
 Cache-Control: no-cache
 
 <!DOCTYPE html>

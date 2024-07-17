@@ -319,9 +319,16 @@ void handler_timedout(int _ignored)
     }
     if(verbose) {
         // we're supposed to exit asap, so ignore rval of write
-        (void) write(fileno(stderr), &buf[p], 16 - p);
-        // we're supposed to exit asap, so ignore rval of write
-        (void) write(fileno(stderr), "timed out\n", strlen("timed out\n"));
+        int _ignore;
+        _ignore = write(fileno(stderr), &buf[p], 16 - p);
+        (void) _ignore;
+        _ignore = write(fileno(stderr), "timed out\n", strlen("timed out\n"));
+        (void) _ignore;
+        // I really don't understand why they need to insist so much on the return value
+        // of write; this is literally the process's last dying breath, it's really not
+        // the time to deal with bureaucracy. I hope the compiler doesn't learn to interpret
+        // the above lines as "discarding the value" or I'm going to disable that
+        // warning entirely, and then it helps noone.
     }
     _exit(1);
 }

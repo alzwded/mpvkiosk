@@ -8,32 +8,55 @@
 // 
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+
+#include <unistd.h>
+#include <getopt.h>
+#include <errno.h>
+#include <signal.h>
+#include <err.h>
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/select.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <errno.h>
+
 #include <netinet/in.h>
-#include <signal.h>
-#include <err.h>
-#include <ctype.h>
-#include <getopt.h>
 #include <arpa/inet.h>
 
-#define CONTENT_LENGTH_LIMIT (1 * 1024 * 1024)
-#define TIMEOUT_LIMIT 30
+// don't bother with POST requests bigger than 1MB
+#ifndef CONTENT_LENGTH_LIMIT
+# define CONTENT_LENGTH_LIMIT (1 * 1024 * 1024)
+#endif
 
+// don't bother with clients that take this long to say anything.
+// since this runs on lan, it might as well be <5...
+#ifndef TIMEOUT_LIMIT
+# define TIMEOUT_LIMIT 30
+#endif
+
+// server socket; needs to be closed by child processes, or self
 int gsock = 0;
 
+// path to shell script handling requests
 char* handler = NULL;
+// interface to bind; ipv4
 unsigned iface = INADDR_ANY;
+// port to bind
 unsigned port = 8080;
+// be more chatty
 int verbose = 1;
 
+// passed to atexit(3)
+void myatexit()
+{
+    if(gsock) close(gsock);
+}
+
+// used by parser
 static const char* KNOWN_METHODS[] = {
     "GET ",
     "POST ",
@@ -47,11 +70,7 @@ static const char* KNOWN_METHODS[] = {
     NULL
 };
 
-void myatexit()
-{
-    if(gsock) close(gsock);
-}
-
+// parser parsing state
 enum estate {
     INIT = 0,
     PROTO,
@@ -59,16 +78,22 @@ enum estate {
     BODY
 };
 
+// parser state
 struct parser {
-    ssize_t n;
+    // internal parser state, for resume in case it needed more input
     enum estate state;
-    char* method;
-    char* path;
-    size_t headerLength;
-    size_t contentLength;
-    char* headers;
-    char* body;
+    // internal parser state, for resume in case it needed more input
     size_t ip;
+    // HTTP method
+    char* method;
+    // HTTP path
+    char* path;
+    // Content-Length header value
+    size_t contentLength;
+    // Pointer to CRLF delimited header entries (raw)
+    char* headers;
+    // Pointer to body (raw)
+    char* body;
 };
 
 enum parse_return {
@@ -77,10 +102,18 @@ enum parse_return {
     MORE = 1
 };
 
+// initialize parser once, then keep passing that state in
+// if it returns MORE, it expects the caller to read more into
+// buf; it expects buf is realloc(3)'d or something like that, i.e.
+// preceding data is still there when called later.
+// DONE means you can pass this to execute()
+// ERROR means we don't want to talk to the client anymore
 int parse(struct parser* parser, char* buf, size_t sbuf)
 {
     char* end = buf + sbuf;
+    // work pointers
     char* p1, *p2, *p3;
+    // set if headers were properly CRLF delimited; unset if nonstandard?
     int p2WasCRLF = 0;
     switch(parser->state) {
         case INIT:
@@ -88,12 +121,18 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             parser->state = PROTO;
             /*fallthrough*/
         case PROTO:
+            // parse status / protocol / request line (whatever the first line is called)
+            // start from the begining
             p1 = buf;
+            // find the end of the request line
             while(p1 < end && *p1 != '\n') ++p1;
             if(p1 >= end) {
+                // if it's not a line, ignore the client
                 return ERROR;
             }
             *p1 = '\0';
+            // check for known request methods;
+            // p2 will point to after the method
             for(const char** p = KNOWN_METHODS; *p; ++p) {
                 size_t l = strlen(*p);
                 if(sbuf < l) return ERROR;
@@ -104,19 +143,25 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                     break;
                 }
             }
+            // if none found, ignore client
             if(parser->method == NULL) return ERROR;
+            // p2 points past the method
 
+            // skip whitespace
             while(isspace(*p2) && p2 < p1) ++p2;
             if(p2 >= p1) return ERROR;
 
+            // there should be a space after the path, followed by HTTP/1.1
             p3 = p2;
             while(!isspace(*p3) && p3 < p1) ++p3;
             if(p3 >= p1) return ERROR;
 
             *p3 = '\0';
             p3++;
+            // p2 should be our path now.
             parser->path = strdup(p2); // buf may be realloc'd, so strdup
 
+            // check for HTTP/1.1
             while(isspace(*p3) && p3 < p1) ++p3;
             if(strncmp(p3, "HTTP/1.1", 8) != 0) {
                 return ERROR;
@@ -125,9 +170,13 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             parser->ip = (p1 - buf) + 1;
             /*falthrough*/
         case HEADERS:
+            // parse headers; should end with CRLFCRLF
             parser->headers = strdup(buf + parser->ip);
+            // p1 will point to the begining of a header line, of the form
+            // H: v\r\n
             p1 = buf + parser->ip;
             while(p1 < end) {
+                // advance p2 to CRLF
                 p2 = p1;
                 while(p2 < end && *p2 != '\n') ++p2;
                 if(p2 >= end) {
@@ -140,22 +189,29 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 } else {
                     p2WasCRLF = 0;
                 }
+                // check if we actually hit CRLFCRLF, i.e. end of headers
                 if(*p1 == '\0') {
                     parser->state = BODY;
                     p1 = p2 + 1;
                     break;
                 }
+                // else, find the colon
                 p3 = strchr(p1, ':');
                 if(p3 == NULL) continue;
                 *p3 = '\0';
                 ++p3;
 
+                // headers are case insitive
                 for(char* pp = p1; pp < p3; ++pp) {
                     *pp = tolower(*pp);
                 }
 
+                // skip leading whitespace
                 while(p1 < end && isspace(*p1) && *p1) p1++;
 
+                // parse content-length, we need that to be able to
+                // parse the body. Only Content-Type/Content-Length single
+                // file disposition is supported
                 if(strncmp(p1, "content-length", strlen("content-length")) == 0) {
                     parser->contentLength = atoi(p3);
                 }
@@ -165,21 +221,27 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 if(p2WasCRLF) p2[-1] = '\r';
                 p3[-1] = ':';
 
+                // p1 now points to the next header
                 p1 = p2 + 1;
             }
             parser->ip = p1 - buf;
             parser->state = BODY;
             /*fallthrough*/
         case BODY:
+            // if we don't have content-length, we're done; no body
             if(parser->contentLength == 0) {
                 parser->body = NULL;
                 return DONE;
             } else {
                 if(parser->contentLength < 0) return ERROR;
+                // if trying to be given more content than we want, ignore the client
                 if(parser->contentLength > CONTENT_LENGTH_LIMIT) return ERROR;
+                // if the buffer doesn't contain all the data we need, tell
+                // the caller we want more
                 if(sbuf - parser->ip < parser->contentLength) {
                     return MORE;
                 } else {
+                    // else, we're done; pass the parser to execute()
                     parser->body = buf + parser->ip;
                     return DONE;
                 }
@@ -190,15 +252,17 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
 }
 
 // runs in child only
+// passes off the request to the handler script
 void execute(int conn, struct parser* parser)
 {
-    char buf[32];
-    sprintf(buf, "%d", conn);
+    // make the socket be the process's stdout
     dup2(conn, STDOUT_FILENO);
     close(conn);
     if(verbose) fprintf(stderr, "%d: Executing %s %s\n", conn, parser->method, parser->path);
+    // set headers and body env vars
     setenv("REQHEADERS", parser->headers, 1);
     if(parser->body) setenv("REQBODY", parser->body, 1);
+    // exec to the handler script
     int hr = execlp(handler, handler, parser->method, parser->path, NULL);
     if(hr == -1)
         err(EXIT_FAILURE, "execlp");
@@ -216,6 +280,7 @@ void sigchld(int)
 }
 */
 
+// in-process, quick response function for clients, in case parsing failed
 void send_message(int conn, int code, const char* msg)
 {
     char buf[1024];
@@ -224,6 +289,7 @@ void send_message(int conn, int code, const char* msg)
 
     int n = 0;
 
+    // try to talk back for 3s, then give up
     while(n++ < 3) {
         int hr = send(conn, buf, strlen(buf), MSG_DONTWAIT);
         if(hr == -1) {
@@ -257,6 +323,8 @@ void send_done(int conn)
     send_message(conn, 200, "OK");
 }
 
+// handle connection
+// spawns child process to do the actual handling
 void handle(int conn)
 {
     pid_t newpid = fork();
@@ -284,6 +352,8 @@ void handle(int conn)
     fd_set rfds;
     struct timeval tv;
     int retval;
+
+    // read up to 1k blocks, and try parsing the request as we go
 
     char* buf = malloc(1025);
     char* pbuf = buf;
@@ -390,6 +460,8 @@ int main(int argc, char* argv[])
         exit(2);
     }
 
+    // establish server
+
     int hr = 0;
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(-1 == sockfd)
@@ -428,6 +500,8 @@ int main(int argc, char* argv[])
     if(sigaction(SIGCHLD, &sa, NULL) == -1)
         err(EXIT_FAILURE, "sigaction");
         */
+
+    // main loop
 
     while(1) {
         struct sockaddr_in client;

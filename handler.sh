@@ -20,8 +20,10 @@ else
     REQQUERY=""
 fi
 
+# keep this around, needed for pgrep -fx
 MPVCMDLINE="mpv --terminal=no --no-osc --input-ipc-server=~/mpv.sock --idle=yes"
 
+# send an error response with human readable html, and exit
 error() {
     cat <<EOT
 HTTP/1.1 $1
@@ -38,6 +40,7 @@ EOT
     exit 1
 }
 
+# send back a 204 with no body, and exit
 no_content() {
     cat <<EOT
 HTTP/1.1 204 No content.
@@ -45,6 +48,7 @@ EOT
     exit 0
 }
 
+# naive urldecoder
 urldecode() {
     local Q
     Q="${1//%/\\x}"
@@ -52,6 +56,9 @@ urldecode() {
     printf '%b' "$Q"
 }
 
+# parse query string
+# assumes it's only a query string, no ;parameters or anything else that's
+# in the RFC but nobody actually ever uses ever
 parse_query() {
     #declare -A kvs
     kvs=()
@@ -63,6 +70,7 @@ parse_query() {
     IFS="$OLDIFS"
 }
 
+# parse url encoded form data
 parse_body() {
     #declare -A body_kvs
     body_kvs=()
@@ -74,6 +82,9 @@ parse_body() {
     IFS="$OLDIFS"
 }
 
+# check if we want to play a file through mpv
+# the list of extensions is arbitrary
+# using file(1) and checking for media mime types would be a better idea
 supported() {
     # whitelist extensions
     EXT="${1##*.}"
@@ -88,25 +99,35 @@ supported() {
     esac
 }
 
+# talk to the mpv socket
 say() {
     echo "$@" | nc -NU ~/mpv.sock 1>&2
 }
 
+# start mpv daemonized; use DISPLAY :0
+# if you want this running on tty1 without a display server, then you
+# need to run it through getty and ignore the fact that this script can
+# start it itself; perhaps remove startdaemon, ison and turnof in that case
 startdaemon() {
     ( DISPLAY=${DISPLAY:-:0} ${MPVCMDLINE} 1>&2 & ) &
     sleep 1
 }
+# check if mpv is running as intended
 ison() {
     pgrep -fx "${MPVCMDLINE}" > /dev/null
 }
+# turn off the mpv we started; this is a panic button
 turnoff() {
     if ison ; then
+        # ask it nicely to shutdown
         say quit
         sleep 2
+        # if it's still running, tell the OS to shut it down
         ison && kill -9 "$(pgrep -fx "${MPVCMDLINE}")"
     fi
 }
 
+# render the player controls, and exit
 render_main_page() {
     ON_HTML='<form action="/controls/turnoff" method="POST" target="dummyframe"><input type="submit" value="Turn off"/></form>'
     # echo :-)
@@ -168,7 +189,12 @@ EOT
     exit 0
 }
 
+#############
+# endpoints #
+#############
+
 if [[ "$REQPATH" = "/" || "$REQPATH" = "/player" ]] ; then
+    # the main page is the player controls
     if [[ "$REQMETHOD" != GET ]] ; then
         error 400 "Method not supported"
     fi
@@ -233,18 +259,23 @@ elif [[ "$REQPATH" = "/controls/loadfile" ]] ; then
     ison || startdaemon
     parse_body
 
+    # we need something to play
     if [[ -z "${body_kvs[path]}" ]] ; then
         error 404 "No such file: ${body_kvs[path]}"
     fi
 
+    # if it's a local file, check if it's something we don't want to play
     if [[ -f "${body_kvs[path]}" ]] ; then
         supported "${body_kvs[path]}" || error 403 "Only video/audio files are allowed"
     fi
+    # perhaps whitelist remote URLs here, e.g. only youtube
 
+    # load it!
     say loadfile '"'"${body_kvs[path]}"'"' replace
 
     no_content
 elif [[ "$REQPATH" = "/browse" ]] ; then
+    # local file browser
     if [[ "$REQMETHOD" != GET ]] ; then
         error 400 "Method not supported"
     fi
@@ -255,29 +286,37 @@ elif [[ "$REQPATH" = "/browse" ]] ; then
         error 400 "Missing ?path="
     fi
 
+    # list directory
     IFS=''
     RAW="$(ls -1 "${kvs[path]}")"
     files=()
     IFS='
 '
     PP="${kvs[path]%/}"
+    # add parent directory manually
     files[0]="<li><a href='/browse?path=${PP%/*}/'>..</a></li>"
+    # for each file, render a list item
     for f in $RAW ; do
+        # do some normalization and ecaping of the path
         PP="${kvs[path]}/$f"
         PP="${PP%/}"
         PP="${PP//\/\//\/}"
         ENCODEDPP="${PP//\'/&\#39;}"
+        # if it's a directory, link it back to this file browser
         if [[ -d "$PP" ]] ; then
             files[${#files[@]}]="<li><a href='/browse?path=${ENCODEDPP}'>$f</a></li>"
+        # if it's some file we want to play, add a form linking it to the loadfile control
         elif [ -f "$PP" ] && supported "$PP" ; then
             files[${#files[@]}]="<li><form style='display:inline' action='/controls/loadfile' method='POST'><input type='hidden' name='path' value='${ENCODEDPP}'/><input type='submit' value='${f//\'/&\#39;}'/></form></li>"
+        # else, just list it for information purposes
+        # it would probably be better to skip them
         else
             files[${#files[@]}]="<li>$f</li>"
         fi
     done
     IFS="$OLDIFS"
 
-    # echo :-)
+    # render response and exit
     cat <<EOT
 HTTP/1.1 200
 Cotnent-Type: text/html

@@ -48,17 +48,17 @@ fi
 # client didn't use continuations
 AUTHORIZATION="$(echo "$REQHEADERS" | grep "authorization: [Dd]igest \(.*\)\(,.*\)*")"
 
-# the opaque thing should be something to discourage using old digests.
-# or it can be whatever you want
-OPAQUE="$( echo -n    "opaque$((  $( date +%s ) >> 10  ))"  | md5sum | cut -d' ' -f 1 )"
+# mixin a recent timestamp to avoid repeat attacks;
+# technically the nonce should be usable only once, but that requires some sort of state
+RECENT=$((  $( date +%s ) >> 6  ))
 
 send_401() {
     # generate a nonce
     # SECRET/salt should be added, I guess
-    NONCE="$( echo -n "${SECRET:-potato}$(date +%s%N)"  | md5sum | cut -d' ' -f 1 )"
+    NONCE="$( echo -n "${SECRET:-potato}$(date +%s%N)"  | md5sum | cut -d' ' -f 1 )$RECENT"
     cat <<EOT
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: Digest realm=$INSECURE_REALM, nonce=$NONCE, opaque=$OPAQUE
+WWW-Authenticate: Digest realm=$INSECURE_REALM, nonce=$NONCE
 
 EOT
     exit 0
@@ -79,16 +79,17 @@ else
     # the uri they're accessing; we'll believe them, I don't want to check
     uri="$( echo "$AUTHORIZATION" | grep -o "uri=\"\{0,1\}[a-zA-Z0-9+/=]*\"\{0,1\}" | sed -e 's/uri=//' | sed -e 's/"//g' )"
     # get our opaque data back; we use it to check if they last logged in this century
-    copaque="$( echo "$AUTHORIZATION" | grep -o "opaque=\"\{0,1\}[a-zA-Z0-9+/=]*\"\{0,1\}" | sed -e 's/opaque=//' | sed -e 's/"//g' )"
+
+    # check nonce is recent
+    crecent="${nonce:32}"
 
     # compute HA1, HA2 and the digest on our end
     HA1="$(echo -n "$INSECURE_USER:$INSECURE_REALM:$INSECURE_PASSWORD" | md5sum | cut -d' ' -f 1)"
     HA2="$(echo -n "${REQMETHOD}:${uri}" | md5sum | cut -d' ' -f 1)"
     ref="$(echo -n "${HA1}:${nonce}:${HA2}" | md5sum | cut -d' ' -f 1)"
 
-    # if digests match
-    #                    and the opaque thing is as expected
-    if [[ "$resp" = "$ref"  &&  "$copaque" = "$OPAQUE" ]] ; then
+    # if digests match and the nonce was recent enough
+    if [[ "$resp" = "$ref"  &&  "$crecent" = "$RECENT" ]] ; then
         # you get to see the response!
         cat <<EOT
 HTTP/1.1 200 OK

@@ -79,7 +79,7 @@ supported() {
     EXT="${1##*.}"
 
     case "$EXT" in
-        mp4|mkv|avi|mp3|wma|wav|flac|vp9|mov|webm|ogv|m4v|mpa|aac|ogg)
+        mp4|mkv|avi|mp3|wma|wav|flac|vp9|mov|webm|ogv|m4v|m4a|aac|ogg)
             return 0
             ;;
         *)

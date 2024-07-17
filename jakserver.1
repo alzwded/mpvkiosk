@@ -1,0 +1,101 @@
+.TH JAKSERVER 1 "13 July 2024" "jakserver"
+.SH NAME
+jakserver \- the most basic pseudo http server with requests passed off to a shell script
+.SH SYNOPSYS
+.I jakserver
+-x handler_script [-H ip] [-p port] [-q]
+.SH OPTIONS
+.TP
+.BI -h
+Shows help.
+.TP
+.BI -x " handler_script"
+Specify a path to a shell script which will handle requests. See
+.I "HANDLER SCRIPT"
+for details on its interface.
+.TP
+.BI -q
+Quiet mode. Prints out less stuff to standard error.
+.TP
+.BI -H " ip"
+Interface to bind. Default 
+.IR "0.0.0.0" .
+.TP
+.BI -p " port"
+Pick a different port than 8080.
+.SH DESCRIPTION
+.I jakserver
+is the most basic http-like server I could put together.
+.PP
+It listens for HTTP/1.1 requests. It checks the 
+.I "Content-Length"
+header. It accepts form data. It does nothing by itself other than the most
+basic request parsing and immediately hands off execution to the script.
+It forks when accepting a connection.
+.SH "HANDLER SCRIPT"
+The
+.I handler_script
+should be a shell script. It is passed the
+.IR "Request Method" ,
+and
+.IR "Request Path" .
+.PP
+The headers and body (if any) are in the
+.I REQHEADERS
+and
+.I REQBODY
+environment variable.
+.PP
+It is expected that the script write out an HTTP response on standard output.
+It must always write out an HTTP response to standard output, don't leave
+clients hanging!
+.SH SEE ALSO
+.BR darkhttpd (1)
+,
+.BR thttpd (1)
+,
+.BR httpd (1)
+.SH AUTHOR
+Vlad Meșco <vlad.mesco@gmail.com>
+
+This project started life at <https://github.com/alzwded/mpvkiosk>
+.SH LIMITATIONS
+Be warned, this is not a proper and conformant HTTP server. It merely tries
+to look like one to the extent that accessing it from a browser allows one
+to interact with some service. Use it for prototyping only.
+.PP
+It only reads the
+.I "Content-Length"
+header, nothing else.
+.PP
+It assumes and only accepts
+.IR HTTP/1.1 .
+.PP
+IPV4 only.
+.PP
+The
+.I "handler_script"
+needs to be something the shell can execute, i.e.
+.I "./echo_handler.sh"
+or
+.IR "/var/www/cgi/handler.sh" .
+It must be executable.
+.PP
+The
+.I PATH
+(2nd) argument of the
+.I "handler_script"
+will contain the query string. This shouldn't be an issue, as you can search
+for 
+.B "?"
+and separate the query/parameters from your actual path.
+.PP
+Because the body and the headers are passed through environment variables, the request can only be so big.
+It depends on your system.
+At least 100KB, usually 2MB.
+The body is additionally limitted to
+.I CONTENT_LENGTH_LIMIT
+(1MB) by the server itself.
+.PP
+.B "DO NOT"
+under any circumstances use this for any production purposes. You have been warned.

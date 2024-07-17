@@ -183,6 +183,14 @@ Cache-Control: no-cache
     <input type="submit" value="+10'"/>
   </form>
 </p>
+<p>
+  <form style="display:inline" action="/controls/prev" method="POST" target="dummyframe">
+    <input type="submit" value="&lt; prev"/>
+  </form>
+  <form style="display:inline" action="/controls/next" method="POST" target="dummyframe">
+    <input type="submit" value="next &gt;"/>
+  </form>
+</p>
 </body>
 </html>
 EOT
@@ -224,6 +232,24 @@ elif [[ "$REQPATH" = "/controls/showprogress" ]] ; then
     ison || error 500 "Not running"
 
     say show-progress
+
+    no_content
+elif [[ "$REQPATH" = "/controls/next" ]] ; then
+    if [[ "$REQMETHOD" != POST ]] ; then
+        error 400 "Method not supported"
+    fi
+    ison || error 500 "Not running"
+
+    say playlist-next
+
+    no_content
+elif [[ "$REQPATH" = "/controls/prev" ]] ; then
+    if [[ "$REQMETHOD" != POST ]] ; then
+        error 400 "Method not supported"
+    fi
+    ison || error 500 "Not running"
+
+    say playlist-prev
 
     no_content
 elif [[ "$REQPATH" = "/controls/seek" ]] ; then

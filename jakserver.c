@@ -318,8 +318,10 @@ void handler_timedout(int _ignored)
         pid /= 10;
     }
     if(verbose) {
-        write(fileno(stderr), &buf[p], 16 - p);
-        write(fileno(stderr), "timed out\n", strlen("timed out\n"));
+        // we're supposed to exit asap, so ignore rval of write
+        (void) write(fileno(stderr), &buf[p], 16 - p);
+        // we're supposed to exit asap, so ignore rval of write
+        (void) write(fileno(stderr), "timed out\n", strlen("timed out\n"));
     }
     _exit(1);
 }

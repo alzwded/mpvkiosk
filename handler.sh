@@ -126,6 +126,12 @@ startdaemon() {
 
     if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" ]] ; then
         echo 'Neither DISPLAY nor WAYLAND_DISPLAY set' 1>&2
+        # if you require some complicated figuring out of the display number
+        # (X11 or Wayland), do so here, then export DISPLAY WAYLAND_DISPLAY
+        #
+        # You could find the exact process you're interested in and grab its
+        # /proc/pid/environ and export it here entirely, it will be exactly
+        # like running mpv in that display server session!
     fi
 
     ( ${MPVCMDLINE} 1>&2 & ) &

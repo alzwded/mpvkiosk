@@ -12,8 +12,13 @@
 
 REQMETHOD="$1"
 REQPATHANDQUERY="$2"
-REQPATH="${REQPATHANDQUERY%%\?*}"
-REQQUERY="${REQPATHANDQUERY#*\?}"
+if echo "$REQPATHANDQUERY" | grep -q '\?' ; then
+    REQPATH="${REQPATHANDQUERY%%\?*}"
+    REQQUERY="${REQPATHANDQUERY#*\?}"
+else
+    REQPATH="${REQPATHANDQUERY}"
+    REQQUERY=""
+fi
 
 # echo :-)
 cat <<EOT

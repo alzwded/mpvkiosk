@@ -28,6 +28,7 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -69,6 +70,9 @@ unsigned iface = INADDR_ANY;
 unsigned port = 8080;
 // be more chatty
 int verbose = 1;
+// use temporary files to pass BODY through handler's stdin
+// tmpfs(5) or mfs(8) is what's intended to be used
+char* payloadPath = NULL;
 
 // used by parser
 static const char* KNOWN_METHODS[] = {
@@ -276,17 +280,112 @@ nextheader:
     return ERROR;
 }
 
+// in-process, quick response function for clients, in case parsing failed
+void send_message(int conn, int code, const char* msg)
+{
+    char buf[1024];
+    sprintf(buf, "HTTP/1.1 %d\r\nContent-Type: text/plain\r\nContent-Length: %zd\r\n\r\n%s\r\n",
+            code, strlen(msg) + /*len(CRLF)*/2, msg);
+
+    int n = 0;
+
+    // try to talk back for 3s, then give up
+    while(n++ < 3) {
+        int hr = send(conn, buf, strlen(buf), MSG_DONTWAIT);
+        if(hr == -1) {
+            if(errno == EAGAIN || errno == EWOULDBLOCK) {
+                sleep(1);
+                continue;
+            }
+            err(EXIT_FAILURE, "send");
+        }
+        break;
+    }
+
+    close(conn);
+    exit(0);
+}
+
+void send_error(int conn)
+{
+    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
+    send_message(conn, 500, "Error");
+}
+
+void send_bad_request(int conn, const char* msg)
+{
+    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
+    send_message(conn, 400, msg);
+}
+
+void send_done(int conn)
+{
+    send_message(conn, 200, "OK");
+}
+
+
 // runs in child only
 // passes off the request to the handler script
 void execute(int conn, struct parser* parser)
 {
+    // before closing conn...
+    // ...check if we need to pass a body, and how
+    if(parser->body) {
+        if(!payloadPath) {
+            // by env var, close stdin
+            setenv("REQBODY", parser->body, 1);
+            close(STDIN_FILENO);
+        } else {
+            // set up temp buffer
+            int fd = mkstemp(payloadPath);
+            if(fd == -1) {
+                fprintf(stderr, "%d: Failed to open %s, reason: %s\n",
+                        getpid(), payloadPath, strerror(errno));
+                send_error(conn); // exits
+            }
+            unlink(payloadPath);
+
+            // fill up buffer
+            size_t written = 0;
+            while(1) {
+                ssize_t wrote = write(fd, parser->body + written, parser->contentLength - written);
+                if(verbose >= 2) fprintf(stderr, "%d: write() = %zd\n", getpid(), wrote);
+                if(wrote == -1) {
+                    if(errno == EAGAIN) {
+                        errno = 0;
+                        continue;
+                    }
+                    fprintf(stderr, "%d: Failed to write to %s, reason: %s\n",
+                            getpid(), payloadPath, strerror(errno));
+                    send_error(conn);
+                } else if(wrote == 0) {
+                    fprintf(stderr, "%d: failed to write to %s, reason: gave up\n",
+                            getpid(), payloadPath);
+                    send_error(conn); // exits
+                }
+                written += wrote;
+                if(written == parser->contentLength) break;
+            }
+
+            // "pass" buffer to child process as its stdin
+            lseek(fd, 0, SEEK_SET);
+            dup2(fd, STDIN_FILENO);
+            close(fd);
+        }
+    } else {
+        // no body, close stdin
+        close(STDIN_FILENO);
+    }
+
     // make the socket be the process's stdout
     dup2(conn, STDOUT_FILENO);
+    // get rid of our copy
     close(conn);
-    if(verbose) fprintf(stderr, "%d: Executing %s %s\n", getpid(), parser->method, parser->path);
-    // set headers and body env vars
+
+    // set headers env vars
     setenv("REQHEADERS", parser->headers, 1);
-    if(parser->body) setenv("REQBODY", parser->body, 1);
+
+    if(verbose) fprintf(stderr, "%d: Executing %s %s\n", getpid(), parser->method, parser->path);
     // exec to the handler script
     int hr = execlp(handler, handler, parser->method, parser->path, NULL);
     if(hr == -1)
@@ -334,49 +433,6 @@ void handler_timedout(int _ignored)
         // warning entirely, and then it helps noone.
     }
     _exit(1);
-}
-
-// in-process, quick response function for clients, in case parsing failed
-void send_message(int conn, int code, const char* msg)
-{
-    char buf[1024];
-    sprintf(buf, "HTTP/1.1 %d\r\nContent-Type: text/plain\r\nContent-Length: %zd\r\n\r\n%s\r\n",
-            code, strlen(msg) + /*len(CRLF)*/2, msg);
-
-    int n = 0;
-
-    // try to talk back for 3s, then give up
-    while(n++ < 3) {
-        int hr = send(conn, buf, strlen(buf), MSG_DONTWAIT);
-        if(hr == -1) {
-            if(errno == EAGAIN || errno == EWOULDBLOCK) {
-                sleep(1);
-                continue;
-            }
-            err(EXIT_FAILURE, "send");
-        }
-        break;
-    }
-
-    close(conn);
-    exit(0);
-}
-
-void send_error(int conn)
-{
-    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
-    send_message(conn, 500, "Error");
-}
-
-void send_bad_request(int conn, const char* msg)
-{
-    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
-    send_message(conn, 400, msg);
-}
-
-void send_done(int conn)
-{
-    send_message(conn, 200, "OK");
 }
 
 // handle connection
@@ -485,13 +541,18 @@ void help(const char* argv0)
             "\t-H ip4             interface to bind; default 0.0.0.0\n"
             "\t-p port            which port to bind; default 8080\n"
             "\t-x handler_script  path to an executable script to handle requests\n"
+            "\t-0 /dev/shm        sends request body to handler_script via its stdin\n"
+            "\t                   expects a writable path, like /dev/shm or /tmp\n"
             "\n"
             "The handler_script will receive 2 or 3 arguments:\n"
             "  o the request method\n"
             "  o the request path\n"
             "\n"
-            "The headers are passed through the REQHEADERS environment variable\n"
-            "The body is passed through the REQBODY environment variable\n"
+            "The headers are passed through the REQHEADERS environment variable.\n"
+            "Unless -0 path is specified, request body is passed through the\n"
+            "REQBODY environment variable.\n"
+            "If -0 dirpath is specified, that location will be used to buffer\n"
+            "request bodies. The handler_script may read the body from its stdin\n"
             "\n"
             "Log is on STDERR\n"
             ,
@@ -515,14 +576,15 @@ void help(const char* argv0)
 int main(int argc, char* argv[])
 {
     int opt;
-    while((opt = getopt(argc, argv, "H:p:x:hqv")) != -1) {
+    while((opt = getopt(argc, argv, "H:p:x:hqv0:")) != -1) {
         switch(opt) {
             case 'h': help(argv[0]); return 2;
-            case 'x': handler = strdup(optarg); break;
+            case 'x': free(handler); handler = strdup(optarg); break;
             case 'H': iface = inet_addr(optarg); break;
             case 'p': port = atoi(optarg); break;
             case 'q': verbose--; break;
             case 'v': verbose++; break;
+            case '0': free(payloadPath); payloadPath = strdup(optarg); break;
             default:
                       fprintf(stderr, "Unknown flag %c\n", opt);
                       help(argv[0]);
@@ -533,17 +595,39 @@ int main(int argc, char* argv[])
     if(!handler) {
         fprintf(stderr, "You must specify -x handler_script\n");
         exit(2);
+    } else {
+        handler = strdup(handler);
     }
     if(iface == INADDR_NONE) {
         fprintf(stderr, "Invalid IP passed to -H\n");
         exit(2);
     }
     if(0 != access(handler, R_OK|X_OK))
-        err(EXIT_FAILURE, "access(handler_script)");
+        err(EXIT_FAILURE, "access(handler_script, r-x)");
 
     if(port == 0) {
         fprintf(stderr, "Port must be > 0\n");
         exit(2);
+    }
+
+    if(payloadPath) {
+        struct stat sb;
+        if(0 != stat(payloadPath, &sb)) {
+            err(EXIT_FAILURE, "stat -0 path");
+        } else if(!S_ISDIR(sb.st_mode)) {
+            fprintf(stderr, "%s is not a directory\n", payloadPath);
+            exit(1);
+        } else if(0 != access(payloadPath, R_OK|W_OK|X_OK)) {
+            err(EXIT_FAILURE, "access(-0 path, rwx)");
+        }
+        char* dir = payloadPath;
+#define TEMPLATE_TAIL "/jakXXXXXX"
+        size_t fullSize = strlen(payloadPath) + strlen(TEMPLATE_TAIL) + 1;
+        payloadPath = malloc(fullSize);
+        snprintf(payloadPath, fullSize, "%s%s", dir, TEMPLATE_TAIL);
+        payloadPath[fullSize - 1] = '\0';
+        free(dir);
+#undef TEMPLATE_TAIL
     }
 
     // establish server

@@ -3,7 +3,7 @@
 jakserver \- the most basic pseudo http server with requests passed off to a shell script
 .SH SYNOPSYS
 .I jakserver
--x handler_script [-H ip] [-p port] [-q] [-v]
+-x handler_script [-H ip] [-p port] [-q] [-v] [-0 /dev/shm]
 .SH OPTIONS
 .TP
 .BI -h
@@ -13,6 +13,14 @@ Shows help.
 Specify a path to a shell script which will handle requests. See
 .I "HANDLER SCRIPT"
 for details on its interface.
+.TP
+.BI -0 " /directory/path"
+Request bodies will be passed to the handler script via its standard input. However, data needs to be stored somewhere, so that
+.I "/directory/path"
+is used as a buffer. Recommended values are
+.I "/dev/shm"
+or
+.IR "/tmp" .
 .TP
 .BI -q
 Quiet mode. Prints out less stuff to standard error.
@@ -76,31 +84,38 @@ and
 .I "Request Path"
 as the first (and only) two arguments.
 .PP
-The headers and body (if any) are in the
+Unless
+.BI -0 " path"
+is specified, the headers and body (if any) are in the
 .I REQHEADERS
 and
 .I REQBODY
 environment variables.
 .PP
 If
+.BI -0 " path"
+is specified, the headers are in the
+.I REQHEADERS
+environment variable, and the body (if any) is on standard input. If
+.I Content-Length
+was 0, or the request otherwise didn't have a body, standard input will be closed. The temporary files are immediately unlinked and get autodeleted when the request handler ends. Using
+.IR tmpfs (5)
+is recommended, as this buffer is used only to be able to retain memory afrer
+.IR exec (3)
+is called.
+.PP
+If
 .I jakserver
 is compiled with
-.I HANDLER_TIMEOUT_LIMIT
+.IR HANDLER_TIMEOUT_LIMIT
 > 0, then the handler program will receive
 .I SIGALRM
-after the specified amount of time.
+after the specified amount of time if it didn't finish processing the request.
 .PP
 It is expected that the script write out an HTTP response on standard output. It must always write out an HTTP response to standard output, don't leave clients hanging!
 .PP
 This is usually a shell script, but there's nothing wrong with coding up a web application in pure C/C++!
 .PP
-If 
-.I jakserver
-was compiled with
-.IR HANDLER_TIMEOUT_LIMIT " > 0"
-then the handler program will receive a
-.I SIGALRM
-after that many seconds if it doesn't finish until then.
 .SH SEE ALSO
 .BR thttpd (1)
 ,
@@ -116,40 +131,49 @@ Vlad Meșco <vlad.mesco@gmail.com>
 
 This project started life at <https://github.com/alzwded/mpvkiosk>
 .SH LIMITATIONS
-Be warned, this is not a proper and conformant HTTP server. It merely tries to look like one to the extent that accessing it from a browser allows one to interact with some service. Use it for prototyping only.
+Recommended for prototyping or home use only. The software is provided "as is" and any express or implied warranties and fitness for a particular purpose are disclaimed.
 .PP
-It only reads the
+It parses the request headers to find the
 .I "Content-Length"
-header, nothing else. If `Content-Length' is undefined or 0, it does not read the body.
+header. If `Content-Length' is undefined or 0, it does not read the body and stops at CRLF. While processing headers, it makes all of them lowercase (the left hand side of `:'.
 .PP
 It assumes and only accepts
 .IR HTTP/1.1 .
+Not even HTTP/1.0.
 .PP
-IPv4 only. Maybe IPv6 one day, but that just adds unnecessary complexity, given its present day requirements.
+IPv4 only. Maybe IPv6 one day, but that just adds unnecessary complexity, given its present day requirements. But it shouldn't be terribly difficult to add support.
 .PP
 The
 .I "handler_script"
 needs to be something the shell can execute, i.e.
 .I "./echo_handler.sh"
 or
-.IR "/var/www/cgi/handler.sh" .
+.IR "/var/www/webapp.sh" .
 It must be executable.
 .PP
-The server makes no effort to split the
-.I PATH
+The server makes no effort to split/parse the
+.I "REQUEST PATH"
 (2nd) argument of the
 .IR "handler_script" .
 This shouldn't be an issue, as you can search for 
 .B "?"
-and separate the query/parameters from your actual path. And also deal with `;', which is also a way to add parameters to URLs.
+and separate the query/parameters from your actual path. And also deal with `;', which is also a way to add parameters to URLs. The path might be application-specific, though, I didn't read the RFC carefully.
 .PP
-Because the body and the headers are passed through environment variables, the request can only be so big. It depends on your system. At least 100KB, usually 2MB. The request is additionally limitted to
+Without using the
+.BI "-0" " dirpath"
+option, you cannot easily accept binary data, as environment variables are set as text. For example, it will be truncated at the first
+.IR NULL .
+Even with pure text data, the request can only be so big. The command line and the
+.I environ
+table are stored in a somewhat fixed sized buffer, and the size depends on your system. At least 100KB, sometimes 2MB, maybe more. The request is additionally limitted to
 .I REQUEST_SIZE_LIMIT
 (1MB) by the server itself.
 .PP
-Because the body and the headers are passed as text, you cannot easily accept binary data. For example, it will be truncated at the first
-.IR NULL .
-This will maybe be improved upon in a future version.
+If you want to accept either large or otherwise binary requests, do use the
+.BI "-0" " dirpath"
+option. The headers are still passed through env vars, but the bulk of the data should be the body, and that's dealt with.
 .PP
 .B "DO NOT"
-under any circumstances use this for any production purposes. You have been warned.
+under any circumstances use this for any production purposes. You have been warned. Use something tried and tested whose project goals include
+.B security
+somewhere near the top.

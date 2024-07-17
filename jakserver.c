@@ -568,13 +568,6 @@ int main(int argc, char* argv[])
         }
 
         if(verbose) {
-            unsigned int aaa = *((unsigned int*)&client.sin_addr.s_addr);
-            unsigned bits[] = {
-                (aaa >> 0)  & 0xFF,
-                (aaa >> 8)  & 0xFF,
-                (aaa >> 16) & 0xFF,
-                (aaa >> 24) & 0xFF,
-            };
             fprintf(stderr, "Got a connection %d from %s\n", conn, inet_ntoa(client.sin_addr));
         }
 

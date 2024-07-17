@@ -24,6 +24,9 @@ You can paste a local path or a weblink (supported by *mpv(1)* by way of *yt-dlp
 
 The `Turn Off` button is a panic button which shuts down the remote mpv in case anything went haywire. Or, just if you want to shut down that process. The stop button merely instructs mpv to stop playing, the process continues to hang around in the background.
 
+There are [example handlers](./example_handlers/README.md) available if you want
+the server to do something else.
+
 Installation
 ------------
 

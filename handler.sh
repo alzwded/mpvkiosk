@@ -106,12 +106,29 @@ say() {
     echo "$@" | nc -NU ~/mpv.sock 1>&2
 }
 
-# start mpv daemonized; use DISPLAY :0
+# start mpv daemonized; WAYLAND_DISPLAY or DISPLAY must be set in the environment
 # if you want this running on tty1 without a display server, then you
 # need to run it through getty and ignore the fact that this script can
 # start it itself; perhaps remove startdaemon, ison and turnof in that case
 startdaemon() {
-    ( DISPLAY=${DISPLAY:-:0} ${MPVCMDLINE} 1>&2 & ) &
+    echo Starting mpv 1>&2
+
+    # note to self
+    # wl_display_add_socket(display, NULL) would use WAYLAND_DISPLAY to
+    # decide what number to use; sway doesn't do that, it starts from 1
+    # and piks the first free slot up to 32 (?!)
+    # so let's unga bunga this
+    #
+    # you can browse XDG_RUNTIME_DIR or /proc/*/environ to figure what
+    # the thing you want is if you have multiple things running. Or use
+    # a sane compositor which you can control better. Or X11, X11 behaves
+    # itself.
+
+    if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" ]] ; then
+        echo 'Neither DISPLAY nor WAYLAND_DISPLAY set' 1>&2
+    fi
+
+    ( ${MPVCMDLINE} 1>&2 & ) &
     # it won't set up the socket immediately, so wait
     sleep 5
 }

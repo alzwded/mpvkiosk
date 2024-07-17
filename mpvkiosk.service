@@ -6,6 +6,8 @@ User=pi
 ExecStart=jakserver -x /var/www/handler.sh
 ExecStop=kill -2 `pgrep -fx 'jakserver -x /var/www/handler.sh'`
 StandardOutput=journal
+Environment="WAYLAND_DISPLAY=wayland-1"
+#Environment="DISPLAY=:0"
 
 [Install]
 WantedBy=multi-user.target

@@ -36,10 +36,11 @@ Put the *handler.sh* script somewhere intelligent (e.g. /var/www/handler.sh),
 then run *jakserver*
 
     install -m 755 -D handler.sh /var/www/handler.sh
-    jakserver -x /var/www/handler.sh -p 8080
+    env DISPLAY=:0 jakserver -x /var/www/handler.sh -p 8080
 
 You should set up a `chroot(1)` in `/var/www` and/or run `jakserver` as
-a somewhat limitted user.
+a somewhat limitted user. Some sort of socket needs to be poked through the
+chroot (mpv ipc socket, X11 socket, Wayland socket etc).
 
 You can customize the `handler.sh` script to do what you want. E.g. add
 support for *feh(1)* to look at pictures, or playlist support, etc.
@@ -47,4 +48,4 @@ support for *feh(1)* to look at pictures, or playlist support, etc.
 There's an [example systemd unit](./mpvkiosk.service) which you can drop
 in `/etc/systemd/system/mpvkiosk.service` and turn it on at boot. In my case,
 I have *sway(1)* autostart and autologin, and it has the advantage that any
-app is effectively full screen by default.
+app is effectively full screen by default. *sway* starts up as `wayland-1` by default, *gnome-shell* may start up as `wayland-0`. For X11 systems, you'd need to set `DISPLAY=:0` or whatever it was started as.

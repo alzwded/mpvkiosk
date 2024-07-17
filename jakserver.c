@@ -53,6 +53,11 @@
 # define HANDLER_TIMEOUT_LIMIT TIMEOUT_LIMIT
 #endif
 
+// see listen(3), backlog
+#ifndef MAX_BACKLOG
+# define MAX_BACKLOG 10
+#endif
+
 // server socket; needs to be closed by child processes, or self
 int gsock = 0;
 
@@ -509,7 +514,7 @@ int main(int argc, char* argv[])
     if(-1 == hr)
         err(EXIT_FAILURE, "bind");
 
-    hr = listen(sockfd, 10);
+    hr = listen(sockfd, MAX_BACKLOG);
     if(-1 == hr)
         err(EXIT_FAILURE, "listen");
 

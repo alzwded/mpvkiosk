@@ -16,7 +16,7 @@ talks to it by way of its inbuilt `--input-ipc-server`.
 
 In my case, *mpv(1)* is running in a *sway(1)* session.
 
-The web interface ([*handler.sh*](./handler.sh) is a barebones remote control.
+The web interface ([*handler.sh*](./handler.sh)) is a barebones remote control.
 
 ![web player](./screenshot.png)
 

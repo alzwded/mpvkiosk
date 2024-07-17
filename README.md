@@ -4,7 +4,7 @@ mpvkiosk
 This little project is written to allow easy control of mpv running on a
 little raspberry pi which has a monitor connected to it, but no keyboard.
 
-The project is build with two components. [*jakserver*](./jakserver.c) is the tiniest HTTP
+The project is built with two components. [*jakserver*](./jakserver.c) is the tiniest HTTP
 server, which fully delegates request handling to a subprocess running
 a single possible script. See [*jakserver(1)*](./jakserver.1) for more
 information on it. It's great for prototyping and not worrying about configuring

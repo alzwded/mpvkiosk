@@ -91,7 +91,7 @@ else
     if [[ "$resp" = "$ref"  &&  "$copaque" = "$OPAQUE" ]] ; then
         # you get to see the response!
         cat <<EOT
-HTTP/1.1 200 CHECK
+HTTP/1.1 200 OK
 Content-Type: text/plain
 Content-Length: 3
 X-IsSecretToEveryone: yes

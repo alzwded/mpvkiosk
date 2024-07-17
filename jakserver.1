@@ -25,20 +25,22 @@ Interface to bind. Default
 Pick a different port than 8080.
 .SH DESCRIPTION
 .I jakserver
-is the most basic http-like server I could put together.
+is the most basic HTTP server I could put together.
 .PP
 It listens for HTTP/1.1 requests. It checks the 
 .I "Content-Length"
 header. It accepts form data. It does nothing by itself other than the most
-basic request parsing and immediately hands off execution to the script.
-It forks when accepting a connection.
+basic request parsing and immediately hands off execution to the script. It forks when accepting a connection.
+.PP
+You can think of it as a "cgi only micro http server". In fact, it does nothing without a handler program.
 .SH "HANDLER SCRIPT"
 The
 .I handler_script
-should be a shell script. It is passed the
-.IR "Request Method" ,
+represents the brains and server configuration. It is passed the
+.I "Request Method"
 and
-.IR "Request Path" .
+.I "Request Path"
+as the first (and only) two arguments.
 .PP
 The headers and body (if any) are in the
 .I REQHEADERS
@@ -46,15 +48,19 @@ and
 .I REQBODY
 environment variable.
 .PP
-It is expected that the script write out an HTTP response on standard output.
-It must always write out an HTTP response to standard output, don't leave
-clients hanging!
+It is expected that the script write out an HTTP response on standard output. It must always write out an HTTP response to standard output, don't leave clients hanging!
+.PP
+This is usually a shell script, but there's nothing wrong with coding up a web application in pure C/C++!
 .SH SEE ALSO
-.BR darkhttpd (1)
-,
 .BR thttpd (1)
 ,
+.BR nginx (1)
+,
+.BR lighttpd (1)
+,
 .BR httpd (1)
+,
+.BR darkhttpd (1)
 .SH AUTHOR
 Vlad Meșco <vlad.mesco@gmail.com>
 

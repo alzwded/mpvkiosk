@@ -12,6 +12,9 @@
 
 # example handler program for jakserver(1)
 
+# run with
+#     jakserver -x ./echo_env_handler.sh
+
 trap 'echo exited 1>&2' EXIT
 set -x
 

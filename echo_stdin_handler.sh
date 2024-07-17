@@ -12,6 +12,11 @@
 
 # example handler program for jakserver(1)
 
+# run with
+#     jakserver -x ./echo_stdin_handler.sh -0 /dev/shm
+# or
+#     jakserver -x ./echo_stdin_handler.sh -0 /tmp
+
 trap 'echo exited 1>&2' EXIT
 set -x
 

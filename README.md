@@ -5,10 +5,10 @@ This little project is written to allow easy control of mpv running on a
 little raspberry pi which has a monitor connected to it, but no keyboard.
 
 The project is build with two components. [*jakserver*](./jakserver.c) is the tiniest HTTP
-server, which fully delegates request interpretation to a subprocess running
+server, which fully delegates request handling to a subprocess running
 a single possible script. See [*jakserver(1)*](./jakserver.1) for more
 information on it. It's great for prototyping and not worrying about configuring
-a full apache or thttpd or whatever.
+a full apache or httpd.
 
 The other component is the [*handler.sh*](./handler.sh) which implements the
 "remote control" web page. This makes sure to run a daemonized *mpv(1)* and

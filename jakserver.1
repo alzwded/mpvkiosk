@@ -39,6 +39,24 @@ You can think of it as a "cgi only micro http server", even though it makes no e
 for the interface between
 .I jakserver
 and the handler program.
+.SH CONFIGURATION
+.I jakserver
+does not have any runtime configuration --apart from the command line arguments--, but it does have compile time arguments.
+.TP
+.BI CONTENT_LENGTH_LIMIT " 1048576"
+Rejects requests whose
+.I "Content-Length"
+is larger than this value. Value is in bytes.
+.TP
+.BI TIMEOUT_LIMIT " 30"
+Closes the socket if the client takes longer than this amount of seconds to send the request.
+.TP
+.BI HANDLER_TIMEOUT_LIMIT " TIMEOUT_LIMIT"
+If this is > 0, sets an
+.IR alarm (3)
+before calling
+.IR exec (3)
+to the handler script. The value is in seconds.
 .SH "HANDLER SCRIPT"
 The
 .I handler_script
@@ -57,6 +75,12 @@ environment variables.
 It is expected that the script write out an HTTP response on standard output. It must always write out an HTTP response to standard output, don't leave clients hanging!
 .PP
 This is usually a shell script, but there's nothing wrong with coding up a web application in pure C/C++!
+.PP
+If compiled with
+.IR HANDLER_TIMEOUT_LIMIT "> 0"
+then the handler program will receive a
+.I SIGALRM
+after that many seconds if it doesn't finish until then.
 .SH SEE ALSO
 .BR thttpd (1)
 ,

@@ -33,7 +33,7 @@ Cotnent-Type: text/html
 <p>${REQMETHOD} ${REQPATH} ${REQQUERY}</p>
 <p>OK</p>
 <p>Headers:</p>
-<pre>${HEADERS}</pre>
+<pre>${REQHEADERS}</pre>
 <p>Body:</p>
 <pre>${REQBODY}</pre>
 </body>

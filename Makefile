@@ -1,6 +1,6 @@
-VERSION = 1.1.1
+VERSION = 1.2
 CC ?= gcc
-CFLAGS ?= -std=gnu99 -O2
+CFLAGS ?= -std=c99 -O2
 PREFIX ?= /usr/local
 
 jakserver: jakserver.c

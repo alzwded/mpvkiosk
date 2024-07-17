@@ -43,7 +43,9 @@ a somewhat limitted user. Some sort of socket needs to be poked through the
 chroot (mpv ipc socket, X11 socket, Wayland socket etc).
 
 You can customize the `handler.sh` script to do what you want. E.g. add
-support for *feh(1)* to look at pictures, or playlist support, etc.
+support for *feh(1)* to look at pictures, or playlist support, etc. There are
+[other examples](./example_handlers/README.md) if you want the server to do
+something else which is more complicated.
 
 There's an [example systemd unit](./mpvkiosk.service) which you can drop
 in `/etc/systemd/system/mpvkiosk.service` and turn it on at boot. In my case,

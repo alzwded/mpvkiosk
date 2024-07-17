@@ -21,6 +21,9 @@
 
 # run with
 #     jakserver -x ./echo_env_handler.sh
+#
+# experiment with
+#     curl --digest -u jim:password -v localhost:8080
 
 trap 'echo exited 1>&2' EXIT
 set -x
@@ -90,6 +93,7 @@ else
         cat <<EOT
 HTTP/1.1 200 CHECK
 Content-Type: text/plain
+Content-Length: 3
 X-IsSecretToEveryone: yes
 
 OK

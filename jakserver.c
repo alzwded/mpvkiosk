@@ -310,7 +310,7 @@ void sigchld(int _ignored)
 
 void sighandler(int _ignored)
 {
-    (void)_ignored; // keep some compilers happy
+    (void)_ignored;
     exit(0);
 }
 

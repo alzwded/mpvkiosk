@@ -78,13 +78,15 @@ else
     nonce="$( echo "$AUTHORIZATION" | grep -o "nonce=\"\{0,1\}[a-zA-Z0-9+/=]*\"\{0,1\}" | sed -e 's/nonce=//' | sed -e 's/"//g' )"
     # the uri they're accessing; we'll believe them, I don't want to check
     uri="$( echo "$AUTHORIZATION" | grep -o "uri=\"\{0,1\}[a-zA-Z0-9+/=]*\"\{0,1\}" | sed -e 's/uri=//' | sed -e 's/"//g' )"
-    # get our opaque data back; we use it to check if they last logged in this century
+    # get the username
+    username="$( echo "$AUTHORIZATION" | grep -o "username=\"\{0,1\}[a-zA-Z0-9+/=]*\"\{0,1\}" | sed -e 's/username=//' | sed -e 's/"//g' )"
 
     # check nonce is recent
     crecent="${nonce:32}"
 
     # compute HA1, HA2 and the digest on our end
-    HA1="$(echo -n "$INSECURE_USER:$INSECURE_REALM:$INSECURE_PASSWORD" | md5sum | cut -d' ' -f 1)"
+    #HA1="$(echo -n "$INSECURE_USER:$INSECURE_REALM:$INSECURE_PASSWORD" | md5sum | cut -d' ' -f 1)"
+    HA1="$(echo -n "$username:$INSECURE_REALM:$INSECURE_PASSWORD" | md5sum | cut -d' ' -f 1)"
     HA2="$(echo -n "${REQMETHOD}:${uri}" | md5sum | cut -d' ' -f 1)"
     ref="$(echo -n "${HA1}:${nonce}:${HA2}" | md5sum | cut -d' ' -f 1)"
 

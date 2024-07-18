@@ -1,4 +1,4 @@
-VERSION = 1.3
+VERSION = 1.3.2
 CC ?= gcc
 CFLAGS ?= -std=c99 -O2
 PREFIX ?= /usr/local

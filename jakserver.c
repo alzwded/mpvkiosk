@@ -642,6 +642,9 @@ int main(int argc, char* argv[])
         err(EXIT_FAILURE, "setsockopt(SO_REUSEADDR)");
 
     struct sockaddr_in sockaddr = {
+#ifdef __OpenBSD__
+        sizeof(struct sockaddr_in),
+#endif
         AF_INET,
         htons(port),
         { iface }

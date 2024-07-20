@@ -218,6 +218,10 @@ Cache-Control: no-cache
   <form style="display:inline" action="/controls/next" method="POST" target="dummyframe">
     <input type="submit" value="next &gt;"/>
   </form>
+  <form style="display:inline" action="/controls/jump" method="POST" target="dummyframe">
+    <input name="index" value="1"/>
+    <input type="submit" value="jump"/>
+  </form>
 </p>
 </body>
 </html>
@@ -269,6 +273,23 @@ elif [[ "$REQPATH" = "/controls/next" ]] ; then
     ison || error 500 "Not running"
 
     say playlist-next
+
+    no_content
+elif [[ "$REQPATH" = "/controls/jump" ]] ; then
+    if [[ "$REQMETHOD" != POST ]] ; then
+        error 400 "Method not supported"
+    fi
+    ison || error 500 "Not running"
+
+    parse_body
+
+    if [[ -z "${body_kvs[index]}" ]] ; then
+        error 400 "missing index"
+    fi
+
+    IDX="$( printf %d "${body_kvs[index]}" )"
+
+    say set playlist-pos-1 "$IDX"
 
     no_content
 elif [[ "$REQPATH" = "/controls/prev" ]] ; then
@@ -328,6 +349,53 @@ elif [[ "$REQPATH" = "/controls/loadfile" ]] ; then
     say loadfile '"'"${body_kvs[path]}"'"' replace
 
     no_content
+elif [[ "$REQPATH" = "/controls/loaddir" ]] ; then
+    if [[ "$REQMETHOD" != POST ]] ; then
+        error 400 "Method not supported"
+    fi
+    ison || startdaemon
+    parse_body
+
+    # we need something to play
+    if [[ -z "${body_kvs[path]}" ]] ; then
+        error 404 "No such file: ${body_kvs[path]}"
+    fi
+
+    # check it's a dir
+    if [[ ! -d "${body_kvs[path]}" ]] ; then
+        error 404 "Not found"
+    fi
+
+    OLDIFS="$IFS"
+    IFS='
+'
+    ALLFILES=( $(ls -1 "${body_kvs[path]}") )
+    IFS="$OLDIFS"
+    declare -a FILTEREDFILES
+    FILTEREDFILES=()
+    for f in "${ALLFILES[@]}" ; do
+        FF="${body_kvs[path]}/$f"
+        if [[ ! -f "$FF" ]] ; then
+            continue
+        fi
+        if supported "$f" ; then
+            FILTEREDFILES+=("$FF")
+        fi
+    done
+
+    if [[ ${#FILTEREDFILES[@]} -eq 0 ]] ; then
+        error 404 "No compatible files in ${body_kvs[path]}"
+    fi
+
+    # load the first one
+    say loadfile '"'"${FILTEREDFILES[0]}"'"' replace
+
+    # for everything else, append to playlist
+    for (( i=1 ; $i < ${#FILTEREDFILES[@]} ;  i++ )) ; do
+        say loadfile '"'"${FILTEREDFILES[${i}]}"'"' append
+    done
+
+    no_content
 elif [[ "$REQPATH" = "/browse" ]] ; then
     # local file browser
     if [[ "$REQMETHOD" != GET ]] ; then
@@ -370,6 +438,8 @@ elif [[ "$REQPATH" = "/browse" ]] ; then
     done
     IFS="$OLDIFS"
 
+    ENCODEDPATH="${kvs[path]}"
+    ENCODEDPATH="${ENCODEDPATH//\'/&\#39;}"
     # render response and exit
     cat <<EOT
 HTTP/1.1 200
@@ -379,8 +449,12 @@ Cache-Control: no-cache
 <!DOCTYPE html>
 <html><head><title>ls ${kvs[path]}</title></head>
 <body>
+<p><a href="/player">Player Controls</a></p>
 <p>ls ${kvs[path]}</p>
-<p>OK</p>
+<p><form style='display:inline' action="/controls/loaddir" method="POST">
+   <input type="hidden" name="path" value='$ENCODEDPATH'/>
+   <input type="submit" value="Play all"/>
+   </form></p>
 <ul>${files[@]}</ul>
 </body>
 </html>

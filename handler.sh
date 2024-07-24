@@ -315,7 +315,8 @@ elif [[ "$REQPATH" = "/controls/seek" ]] ; then
     fi
 
     if echo "$VALUE" | grep -q "^\w*-\{0,1\}[0-9]\{1,\}\w*$" ; then
-        say seek $VALUE relative
+        VALUE=$( printf %d "$VALUE" )
+        say seek "$VALUE" relative
         no_content
     else
         error 400 "Bad value="
@@ -369,16 +370,15 @@ elif [[ "$REQPATH" = "/controls/loaddir" ]] ; then
     OLDIFS="$IFS"
     IFS='
 '
-    ALLFILES=( $(ls -1 "${body_kvs[path]}") )
+    ALLFILES=( "${body_kvs[path]}"/* )
     IFS="$OLDIFS"
     declare -a FILTEREDFILES
     FILTEREDFILES=()
-    for f in "${ALLFILES[@]}" ; do
-        FF="${body_kvs[path]}/$f"
+    for FF in "${ALLFILES[@]}" ; do
         if [[ ! -f "$FF" ]] ; then
             continue
         fi
-        if supported "$f" ; then
+        if supported "$FF" ; then
             FILTEREDFILES+=("$FF")
         fi
     done
@@ -391,7 +391,7 @@ elif [[ "$REQPATH" = "/controls/loaddir" ]] ; then
     say loadfile '"'"${FILTEREDFILES[0]}"'"' replace
 
     # for everything else, append to playlist
-    for (( i=1 ; $i < ${#FILTEREDFILES[@]} ;  i++ )) ; do
+    for (( i=1 ; i < ${#FILTEREDFILES[@]} ;  i++ )) ; do
         say loadfile '"'"${FILTEREDFILES[${i}]}"'"' append
     done
 

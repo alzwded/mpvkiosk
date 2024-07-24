@@ -346,7 +346,7 @@ elif [[ "$REQPATH" = "/controls/loadfile" ]] ; then
     # perhaps whitelist remote URLs here, e.g. only youtube
 
     # load it!
-    say loadfile '"'"${body_kvs[path]}"'"' replace
+    say loadfile '"'"${body_kvs[path]//\"/\\\"}"'"' replace
 
     no_content
 elif [[ "$REQPATH" = "/controls/loaddir" ]] ; then

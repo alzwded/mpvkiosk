@@ -20,7 +20,7 @@ set -x
 
 REQMETHOD="$1"
 REQPATHANDQUERY="$2"
-if echo "$REQPATHANDQUERY" | grep -q '\?' ; then
+if echo "$REQPATHANDQUERY" | grep -q '?' ; then
     REQPATH="${REQPATHANDQUERY%%\?*}"
     REQQUERY="${REQPATHANDQUERY#*\?}"
 else

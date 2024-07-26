@@ -106,6 +106,7 @@ struct parser {
     char* method;
     // HTTP path
     char* path;
+#define CHUNKED_MAGIC ((size_t)-1)
     // Content-Length header value
     size_t contentLength;
     // Pointer to CRLF delimited header entries (raw)
@@ -115,6 +116,7 @@ struct parser {
 };
 
 enum parse_return {
+    NOT_IMPLEMENTED = -2,
     ERROR = -1,
     DONE = 0,
     MORE = 1
@@ -182,9 +184,10 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             // p2 should be our path now.
             parser->path = strdup(p2); // buf may be realloc'd, so strdup
 
-            // check for HTTP/1.1
+            // check for HTTP/1.1 or HTTP/1.0
             while(isspace(*p3) && p3 < p1) ++p3;
-            if(strncmp(p3, "HTTP/1.1", 8) != 0) {
+            if(strncmp(p3, "HTTP/1.1", 8) != 0
+                    && strncmp(p3, "HTTP/1.0", 8) != 0) {
                 return ERROR;
             }
 
@@ -235,7 +238,17 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 // parse the body. Only Content-Type/Content-Length single
                 // file disposition is supported
                 if(strncmp(p1, "content-length", strlen("content-length")) == 0) {
+                    if(parser->contentLength > 0) {
+                        if(verbose >= 2) fprintf(stderr, "%d: content-length and/or transfer-encoding specified multiple times\n", getpid());
+                        return ERROR;
+                    }
                     parser->contentLength = atoi(p3);
+                } else if(strncmp(p1, "transfer-encoding", strlen("tranfer-encoding")) == 0) {
+                    if(parser->contentLength > 0) {
+                        if(verbose >= 2) fprintf(stderr, "%d: content-length and/or transfer-encoding specified multiple times\n", getpid());
+                        return ERROR;
+                    }
+                    parser->contentLength = CHUNKED_MAGIC;
                 }
 
                 // undo nullifications to allow someone else to read this garbage
@@ -257,11 +270,37 @@ nextheader:
             /*fallthrough*/
         case BODY:
             // if we don't have content-length, we're done; no body
-            if(parser->contentLength == 0) {
+            if(parser->contentLength == CHUNKED_MAGIC) {
+                // Still considering if to add this or not.
+                //
+                // It should do something like:
+                // - Parse [A-Fa-f0-9]\+\r\n
+                // - decode to decimal -> ChLen
+                // - if ChLen == 0
+                //   + read \r\n or stop (don't ask for MORE for two terminator bytes)
+                // - Read ChLen bytes (or ask MORE)
+                // - Read \r\n (or ask MORE)
+                // - loop
+                //
+                // The problem is, a bad request will only be handled by
+                // the per request timeout, which is annoying. It also
+                // complicates this parser a lot. And it probably won't
+                // be all that well tested either.
+                //
+                // Also, there was a mention somewhere about sending
+                // headers after the body; unclear if that referred solely
+                // to the overall Content-Length or what, but it sounds
+                // like a potential headache.
+                return NOT_IMPLEMENTED;
+            } else if(parser->contentLength == 0) {
                 parser->body = NULL;
                 return DONE;
             } else {
-                if(parser->contentLength < 0) return ERROR;
+                if(parser->contentLength < 0) return ERROR; // FIXME it's currently unsigned...
+                // Sanity check: if the content length itself is bigger than
+                // our limit, exit early; otherwise the caller will error
+                // out if the overall request size is > REQUEST_SIZE_LIMIT
+                if(parser->contentLength > REQUEST_SIZE_LIMIT) return ERROR;
                 // if the buffer doesn't contain all the data we need, tell
                 // the caller we want more
                 if(sbuf - parser->ip < parser->contentLength) {
@@ -524,6 +563,8 @@ void handle(int conn, struct in_addr client_addr)
         } else if(what == DONE) {
             execute(conn, &parser);
             send_done(conn);
+        } else if(what == NOT_IMPLEMENTED) {
+            send_message(conn, 501, "Not implemented");
         } else {
             send_bad_request(conn, "Bad request, or inernal bug");
         }

@@ -138,8 +138,17 @@ It parses the request headers to find the
 header. If `Content-Length' is undefined or 0, it does not read the body and stops at CRLF. While processing headers, it makes all of them lowercase (the left hand side of `:'.
 .PP
 It assumes and only accepts
-.IR HTTP/1.1 .
-Not even HTTP/1.0.
+.I HTTP/1.1
+or
+.IR HTTP/1.0 .
+.PP
+The server does not entertain
+.BI Transfer-Encoding: chunked
+and will assume a
+.I Content-Length
+of 0 and not pass on a body to the handler. This applies to
+.I requests
+and not to responses. Responses have free reign when it comes to what they send back and how (TIMEOUT_LIMIT not withstanding).
 .PP
 IPv4 only. Maybe IPv6 one day, but that just adds unnecessary complexity, given its present day requirements. But it shouldn't be terribly difficult to add support.
 .PP

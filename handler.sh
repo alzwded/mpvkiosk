@@ -35,7 +35,15 @@ Content-Type: text/html;charset=UTF-8
 Cache-Control: no-cache
 
 <!DOCTYPE html>
-<html><head><title>${REQPATH}</title></head>
+<html><head>
+<title>${REQPATH}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+    font-size: 12pt;
+}
+</style>
+</head>
 <body>
 <p>${REQMETHOD} ${REQPATH}: $2</p>
 </body>
@@ -165,7 +173,15 @@ Content-Type: text/html;charset=UTF-8
 Cache-Control: no-cache
 
 <!DOCTYPE html>
-<html><head><title>Player</title></head>
+<html><head>
+<title>Player</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+    font-size: 12pt;
+}
+</style>
+</head>
 <body>
 <iframe name="dummyframe" id="dummyframe" style="display:none;"></iframe>
 <p>${ON_HTML}</p>
@@ -218,6 +234,7 @@ Cache-Control: no-cache
   <form style="display:inline" action="/controls/next" method="POST" target="dummyframe">
     <input type="submit" value="next &gt;"/>
   </form>
+  <br/>
   <form style="display:inline" action="/controls/jump" method="POST" target="dummyframe">
     <input name="index" value="1"/>
     <input type="submit" value="jump"/>
@@ -447,7 +464,15 @@ Content-Type: text/html;charset=UTF-8
 Cache-Control: no-cache
 
 <!DOCTYPE html>
-<html><head><title>ls ${kvs[path]}</title></head>
+<html><head>
+<title>ls ${kvs[path]}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+    font-size: 12pt;
+}
+</style>
+</head>
 <body>
 <p><a href="/player">Player Controls</a></p>
 <p>ls ${kvs[path]}</p>

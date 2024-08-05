@@ -131,6 +131,8 @@ enum parse_return {
 // preceding data is still there when called later.
 // DONE means you can pass this to execute()
 // ERROR means we don't want to talk to the client anymore
+//
+// called in child process
 int parse(struct parser* parser, char* buf, size_t sbuf)
 {
     if(verbose >= 2) {
@@ -157,6 +159,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 return MORE;
             }
             *p1 = '\0';
+            p2 = p1;
             // check for known request methods;
             // p2 will point to after the method
             for(const char** p = KNOWN_METHODS; *p; ++p) {
@@ -164,7 +167,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 if(sbuf < l) return ERROR;
                 if(strncmp(buf, *p, l) == 0) {
                     parser->method = strdup(*p);
-                    parser->method[l - 1] = '\0';
+                    parser->method[l - 1] = '\0'; // KNOWN_METHODS contain one space, null it out on the dup
                     p2 = buf + l;
                     break;
                 }
@@ -242,25 +245,25 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 // file disposition is supported
                 if(strncmp(p1, "content-length", strlen("content-length")) == 0) {
                     if(parser->contentLength > 0) {
-                        if(verbose >= 2) fprintf(stderr, "%d: content-length and/or transfer-encoding specified multiple times\n", getpid());
+                        if(verbose >= 2) fprintf(stderr, "%jd: content-length and/or transfer-encoding specified multiple times\n", (intmax_t)myPid);
                         return ERROR;
                     }
                     parser->contentLength = atoi(p3);
                 } else if(strncmp(p1, "transfer-encoding", strlen("tranfer-encoding")) == 0) {
                     if(parser->contentLength > 0) {
-                        if(verbose >= 2) fprintf(stderr, "%d: content-length and/or transfer-encoding specified multiple times\n", getpid());
+                        if(verbose >= 2) fprintf(stderr, "%jd: content-length and/or transfer-encoding specified multiple times\n", (intmax_t)myPid);
                         return ERROR;
                     }
                     parser->contentLength = CHUNKED_MAGIC;
                 }
 
                 // undo nullifications to allow someone else to read this garbage
-undop3:
+//undop3:
                 p3[-1] = ':';
 undop2:
                 *p2 = '\n';
                 if(p2WasCRLF) p2[-1] = '\r';
-nextheader:
+//nextheader:
 
                 // p1 now points to the next header
                 p1 = p2 + 1;
@@ -323,6 +326,8 @@ nextheader:
 }
 
 // in-process, quick response function for clients, in case parsing failed
+//
+// called in child process
 void send_message(int conn, int code, const char* msg)
 {
     char buf[1024];
@@ -368,6 +373,8 @@ void send_done(int conn)
 
 // runs in child only
 // passes off the request to the handler script
+//
+// called in child process
 void execute(int conn, struct parser* parser)
 {
     // before closing conn...
@@ -479,6 +486,8 @@ void handler_timedout(int _ignored)
 
 // handle connection
 // spawns child process to do the actual handling
+//
+// called in parent and child processes, parent returns early after setting up child
 void handle(int conn, struct in_addr client_addr)
 {
     pid_t newpid = fork();
@@ -499,19 +508,19 @@ void handle(int conn, struct in_addr client_addr)
         // - exits
         // so no need to worry about free
         myPid = newpid;
-
-        if(verbose) fprintf(stderr, "%jd: Handling request from %s\n", (intmax_t)myPid, inet_ntoa(client_addr));
-
-        close(gsock);
-        gsock = 0;
-
-        // set timer now to not deal with timeouts in select
-#if HANDLER_TIMEOUT_LIMIT > 0
-        // set an alarm for the handler script
-        alarm(HANDLER_TIMEOUT_LIMIT);
-        signal(SIGALRM, handler_timedout);
-#endif
     }
+
+    if(verbose) fprintf(stderr, "%jd: Handling request from %s\n", (intmax_t)myPid, inet_ntoa(client_addr));
+
+    close(gsock);
+    gsock = 0;
+
+    // set timer now to not deal with timeouts in select
+#if HANDLER_TIMEOUT_LIMIT > 0
+    // set an alarm for the handler script
+    alarm(HANDLER_TIMEOUT_LIMIT);
+    signal(SIGALRM, handler_timedout);
+#endif
 
     fd_set rfds;
     int retval;

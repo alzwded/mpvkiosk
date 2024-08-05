@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <ctype.h>
 
 #include <unistd.h>
@@ -73,6 +74,8 @@ int verbose = 1;
 // use temporary files to pass BODY through handler's stdin
 // tmpfs(5) or mfs(8) is what's intended to be used
 char* payloadPath = NULL;
+// what's my pid again?
+pid_t myPid = -1;
 
 // used by parser
 static const char* KNOWN_METHODS[] = {
@@ -131,7 +134,7 @@ enum parse_return {
 int parse(struct parser* parser, char* buf, size_t sbuf)
 {
     if(verbose >= 2) {
-        fprintf(stderr, "%d: entered parser, state %d sbuf %zd\n", getpid(), parser->state, sbuf);
+        fprintf(stderr, "%jd: entered parser, state %d sbuf %zd\n", (intmax_t)myPid, parser->state, sbuf);
     }
 
     char* end = buf + sbuf;
@@ -347,13 +350,13 @@ void send_message(int conn, int code, const char* msg)
 
 void send_error(int conn)
 {
-    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
+    if(verbose) fprintf(stderr, "%jd: rejected\n", (intmax_t)myPid);
     send_message(conn, 500, "Error");
 }
 
 void send_bad_request(int conn, const char* msg)
 {
-    if(verbose) fprintf(stderr, "%d: rejected\n", getpid());
+    if(verbose) fprintf(stderr, "%jd: rejected\n", (intmax_t)myPid);
     send_message(conn, 400, msg);
 }
 
@@ -378,8 +381,8 @@ void execute(int conn, struct parser* parser)
             // set up temp buffer
             int fd = mkstemp(payloadPath);
             if(fd == -1) {
-                fprintf(stderr, "%d: Failed to open %s, reason: %s\n",
-                        getpid(), payloadPath, strerror(errno));
+                fprintf(stderr, "%jd: Failed to open %s, reason: %s\n",
+                        (intmax_t)myPid, payloadPath, strerror(errno));
                 send_error(conn); // exits
             }
             unlink(payloadPath);
@@ -388,18 +391,18 @@ void execute(int conn, struct parser* parser)
             size_t written = 0;
             while(1) {
                 ssize_t wrote = write(fd, parser->body + written, parser->contentLength - written);
-                if(verbose >= 2) fprintf(stderr, "%d: write() = %zd\n", getpid(), wrote);
+                if(verbose >= 2) fprintf(stderr, "%jd: write() = %zd\n", (intmax_t)myPid, wrote);
                 if(wrote == -1) {
                     if(errno == EAGAIN) {
                         errno = 0;
                         continue;
                     }
-                    fprintf(stderr, "%d: Failed to write to %s, reason: %s\n",
-                            getpid(), payloadPath, strerror(errno));
+                    fprintf(stderr, "%jd: Failed to write to %s, reason: %s\n",
+                            (intmax_t)myPid, payloadPath, strerror(errno));
                     send_error(conn);
                 } else if(wrote == 0) {
-                    fprintf(stderr, "%d: failed to write to %s, reason: gave up\n",
-                            getpid(), payloadPath);
+                    fprintf(stderr, "%jd: failed to write to %s, reason: gave up\n",
+                            (intmax_t)myPid, payloadPath);
                     send_error(conn); // exits
                 }
                 written += wrote;
@@ -424,7 +427,7 @@ void execute(int conn, struct parser* parser)
     // set headers env vars
     setenv("REQHEADERS", parser->headers, 1);
 
-    if(verbose) fprintf(stderr, "%d: Executing %s %s\n", getpid(), parser->method, parser->path);
+    if(verbose) fprintf(stderr, "%jd: Executing %s %s\n", (intmax_t)myPid, parser->method, parser->path);
     // exec to the handler script
     int hr = execlp(handler, handler, parser->method, parser->path, NULL);
     if(hr == -1)
@@ -453,7 +456,7 @@ void handler_timedout(int _ignored)
 {
     (void)_ignored;
     static char buf[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ':', ' ' };
-    int pid = getpid(), p = 14;
+    int pid = myPid, p = 14;
     while(pid > 0) {
         buf[--p] = pid % 10 + '0';
         pid /= 10;
@@ -495,8 +498,9 @@ void handle(int conn, struct in_addr client_addr)
         // - execs bash
         // - exits
         // so no need to worry about free
+        myPid = newpid;
 
-        if(verbose) fprintf(stderr, "%d: Handling request from %s\n", getpid(), inet_ntoa(client_addr));
+        if(verbose) fprintf(stderr, "%jd: Handling request from %s\n", (intmax_t)myPid, inet_ntoa(client_addr));
 
         close(gsock);
         gsock = 0;
@@ -543,7 +547,7 @@ void handle(int conn, struct in_addr client_addr)
             pbuf[bytes] = '\0';
         }
         if(verbose >= 2)
-            fprintf(stderr, "%d: DEBUG: bytes %zd buf %s pbuf %s pbuf-buf %zd\n", getpid(), bytes, buf, pbuf, pbuf - buf);
+            fprintf(stderr, "%jd: DEBUG: bytes %zd buf %s pbuf %s pbuf-buf %zd\n", (intmax_t)myPid, bytes, buf, pbuf, pbuf - buf);
 
         int what = parse(&parser, buf, sbuf);
         if(what == MORE) {
@@ -670,6 +674,8 @@ int main(int argc, char* argv[])
         free(dir);
 #undef TEMPLATE_TAIL
     }
+
+    myPid = getpid();
 
     // establish server
 

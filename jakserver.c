@@ -717,7 +717,7 @@ int main(int argc, char* argv[])
 
     if(verbose) {
         char* host = inet_ntoa(sockaddr.sin_addr);
-        if(verbose) fprintf(stderr, "Listening on %s:%u\n", host, port);
+        fprintf(stderr, "Listening on %s:%u\n", host, port);
     }
 
     signal(SIGINT, sighandler);

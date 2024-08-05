@@ -374,6 +374,10 @@ void send_done(int conn)
 // runs in child only
 // passes off the request to the handler script
 //
+// if -0 was specified, the handler will get the request body on stdin;
+// otherwise, it's in an env var; the latter is leaner, but you only get
+// some amount of KBs available for one request
+//
 // called in child process
 void execute(int conn, struct parser* parser)
 {
@@ -396,6 +400,9 @@ void execute(int conn, struct parser* parser)
 
             // fill up buffer
             size_t written = 0;
+            // will break on:
+            // - error
+            // - written == parser->contentLength
             while(1) {
                 ssize_t wrote = write(fd, parser->body + written, parser->contentLength - written);
                 if(verbose >= 2) fprintf(stderr, "%jd: write() = %zd\n", (intmax_t)myPid, wrote);
@@ -462,13 +469,17 @@ void sighandler(int _ignored)
 void handler_timedout(int _ignored)
 {
     (void)_ignored;
+    //                      0  1  2  3  4  5  6  7  8  9 10 11 12 13  14   15
     static char buf[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ':', ' ' };
-    int pid = myPid, p = 14;
-    while(pid > 0) {
-        buf[--p] = pid % 10 + '0';
-        pid /= 10;
-    }
     if(verbose) {
+        int pid = myPid;
+        int p = 14 /* pos of ':' */;
+        // p will point to a string containing "<pid>: ", where <pid> is myPid stringified;
+        // this does not allocate new memory, since signal handler
+        while(pid > 0) {
+            buf[--p] = pid % 10 + '0';
+            pid /= 10;
+        }
         // we're supposed to exit asap, so ignore rval of write
         int _ignore;
         _ignore = write(fileno(stderr), &buf[p], 16 - p);
@@ -503,15 +514,17 @@ void handle(int conn, struct in_addr client_addr)
         close(conn);
         return;
     } else {
-        // runs in child which:
-        // - execs bash
-        // - exits
-        // so no need to worry about free
+        // child; save own pid to not call getpid() too much
         myPid = newpid;
     }
+    // runs in child which:
+    // - execs bash
+    // - exits
+    // so no need to worry about free
 
     if(verbose) fprintf(stderr, "%jd: Handling request from %s\n", (intmax_t)myPid, inet_ntoa(client_addr));
 
+    // close the listen() socket, not needed here
     close(gsock);
     gsock = 0;
 
@@ -537,6 +550,11 @@ void handle(int conn, struct in_addr client_addr)
     struct parser parser;
     memset(&parser, 0, sizeof(struct parser));
 
+    // will exit on:
+    // - error
+    // - exec()
+    // - SIGALRM
+    // - connection opened, but nothing written by client
     while(1) {
         FD_ZERO(&rfds);
         FD_SET(conn, &rfds);
@@ -738,6 +756,7 @@ int main(int argc, char* argv[])
 
     // main loop
 
+    // exits on signals
     while(1) {
         struct sockaddr_in client;
         socklen_t client_size = sizeof(struct sockaddr_in);

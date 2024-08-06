@@ -35,6 +35,16 @@
 #include <arpa/inet.h>
 
 // don't bother with POST requests bigger than 1MB
+//
+// without -0 (request passed through env and/or command line),
+// the kernel limits you to ~5 pages of data or so. With -0,
+// the body will be written to a temporary buffer (preferably
+// tmpfs/mfs) and only the headers are passed via execve(2).
+//
+// The server just stops reading and closes the socket when the
+// request size grows beyond this limit; so it should be much
+// smaller without -0, and something reasonable for your usecase
+// with -0. And -0 should be on some ephemeral ramdisk.
 #ifndef REQUEST_SIZE_LIMIT
 # define REQUEST_SIZE_LIMIT (1 * 1024 * 1024)
 #endif
@@ -50,17 +60,19 @@
 // don't bother with clients that take too long to accept
 // the response.
 // define to <= 0 to disable and handle timeouts in the
-// handler script itself
+// handler script itself, but that will not protect
+// against clients that don't finish writing the request
+// in the first place
 #ifndef HANDLER_TIMEOUT_LIMIT
 # define HANDLER_TIMEOUT_LIMIT TIMEOUT_LIMIT
 #endif
 
-// see listen(3), backlog
+// see listen(3), this is the backlog argument passed to listen(3p)
 #ifndef MAX_BACKLOG
 # define MAX_BACKLOG 10
 #endif
 
-// server socket; needs to be closed by child processes, or self
+// server socket; needs to be closed by child processes, or self on exit
 int gsock = 0;
 
 // path to shell script handling requests
@@ -69,12 +81,13 @@ char* handler = NULL;
 unsigned iface = INADDR_ANY;
 // port to bind
 unsigned port = 8080;
-// be more chatty
+// be more chatty; goes from 0 to 2
 int verbose = 1;
 // use temporary files to pass BODY through handler's stdin
-// tmpfs(5) or mfs(8) is what's intended to be used
+// tmpfs(5) or mfs(8) is what's intended to be used;
+// NULL means pass full request through execve()
 char* payloadPath = NULL;
-// what's my pid again?
+// what's my pid again? avoid calling getpid() too much
 pid_t myPid = -1;
 
 // used by parser
@@ -93,10 +106,10 @@ static const char* KNOWN_METHODS[] = {
 
 // parser parsing state
 enum estate {
-    INIT = 0,
-    PROTO,
-    HEADERS,
-    BODY
+    INIT = 0,       // newly created
+    PROTO,          // parsing request line, e.g. GET / HTTP/1.1
+    HEADERS,        // parsing headers until \r\n\r\n
+    BODY            // reading up to Content-Length bytes or REQUEST_SIZE_LIMIT
 };
 
 // parser state
@@ -105,24 +118,26 @@ struct parser {
     enum estate state;
     // internal parser state, for resume in case it needed more input
     size_t ip;
-    // HTTP method
+    // HTTP method (see KNOWN_METHODS)
     char* method;
-    // HTTP path
+    // HTTP path, includes ;parameters?query
     char* path;
 #define CHUNKED_MAGIC ((size_t)-1)
-    // Content-Length header value
+    // Content-Length header value;
+    // CHUNKED_MAGIC is used to detect chunked POSTs, which are currently not supported
     size_t contentLength;
-    // Pointer to CRLF delimited header entries (raw)
+    // Pointer to CRLF delimited header entries;
+    // The left-hand-side is lowercase'd, the right-hand-side is left intact
     char* headers;
     // Pointer to body (raw)
     char* body;
 };
 
 enum parse_return {
-    NOT_IMPLEMENTED = -2,
-    ERROR = -1,
-    DONE = 0,
-    MORE = 1
+    NOT_IMPLEMENTED = -2, // returned for known-to-be unimplemented features
+    ERROR = -1,           // parser didn't like something
+    DONE = 0,             // request fully parsed
+    MORE = 1              // the parser needs more data
 };
 
 // initialize parser once, then keep passing that state in
@@ -132,6 +147,8 @@ enum parse_return {
 // DONE means you can pass this to execute()
 // ERROR means we don't want to talk to the client anymore
 //
+// XXX note, it expects buf to be sbuf+1 bytes long!
+//
 // called in child process
 int parse(struct parser* parser, char* buf, size_t sbuf)
 {
@@ -139,6 +156,7 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
         fprintf(stderr, "%jd: entered parser, state %d sbuf %zd\n", (intmax_t)myPid, parser->state, sbuf);
     }
 
+    // pointer to end of memory buffer
     char* end = buf + sbuf;
     // work pointers
     char* p1, *p2, *p3;
@@ -159,7 +177,9 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 return MORE;
             }
             *p1 = '\0';
-            p2 = p1;
+            // buf[0:p1] contains the request line
+
+            p2 = p1; // silence -Wnot-initialized
             // check for known request methods;
             // p2 will point to after the method
             for(const char** p = KNOWN_METHODS; *p; ++p) {
@@ -172,25 +192,31 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                     break;
                 }
             }
-            // if none found, ignore client
-            if(parser->method == NULL) return ERROR;
-            // p2 points past the method
+            // buf[0:p2] is "METHOD ", p2 points to after space
+            // buf[p2:p1] is the path and protocol
 
-            // skip whitespace
+            // if not a known method, error out
+            if(parser->method == NULL) return ERROR;
+
+            // skip whitespace from p2 
             while(isspace(*p2) && p2 < p1) ++p2;
+            // if p2 got to the end (p1), error out, missing path and protocol
             if(p2 >= p1) return ERROR;
 
             // there should be a space after the path, followed by HTTP/1.1
             p3 = p2;
             while(!isspace(*p3) && p3 < p1) ++p3;
             if(p3 >= p1) return ERROR;
-
             *p3 = '\0';
             p3++;
-            // p2 should be our path now.
+            // buf[p2:p3] is the path, buf[p3:p1] is " *protocol"
+            // p3 is a null terminated string to the protocol
+
+            // p2 should be a null terminated string to our path now.
             parser->path = strdup(p2); // buf may be realloc'd, so strdup
 
-            // check for HTTP/1.1 or HTTP/1.0
+            // check for HTTP/1.1 or HTTP/1.0;
+            // newer versions imply TLS, so it wouldn't even get here
             while(isspace(*p3) && p3 < p1) ++p3;
             if(strncmp(p3, "HTTP/1.1", 8) != 0
                     && strncmp(p3, "HTTP/1.0", 8) != 0) {
@@ -198,10 +224,13 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
             }
 
             parser->ip = (p1 - buf) + 1;
+            // headers start at parser->ip
             parser->state = HEADERS;
             /*falthrough*/
         case HEADERS:
             // parse headers, should end with CLRF
+
+            // Limitation: continuation lines aren't really supported
 
             // p1 will point to the begining of a header line, of the form
             // H: v\r\n
@@ -214,13 +243,16 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                     return MORE;
                 }
                 *p2 = '\0';
+                // remove go to before \r\n
                 if(p2 > p1 && p2[-1] == '\r') {
                     p2WasCRLF = 1;
                     p2[-1] = '\0';
                 } else {
                     p2WasCRLF = 0;
                 }
-                // check if we actually hit CRLFCRLF, i.e. end of headers
+                // p1 is now a null terminated string, we can try to parse the line
+
+                // check if we actually hit CRLFCRLF, i.e. end of headers; p1 would be "" in that case
                 if(*p1 == '\0') {
                     parser->state = BODY;
                     p1 = p2 + 1;
@@ -228,16 +260,21 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
                 }
                 // else, find the colon
                 p3 = strchr(p1, ':');
-                if(p3 == NULL) goto undop2;
+                if(p3 == NULL) goto undop2; // no colon, we don't like this
+                // else, we have a colon; null it out, so p1 is now a null terminated string to
+                //       a header name
                 *p3 = '\0';
                 ++p3;
+                // p3 now points to a null terminated string of maybe the value
 
-                // headers are case insitive
+                // headers are case insitive, so lowercase everything
                 for(char* pp = p1; pp < p3; ++pp) {
                     *pp = tolower(*pp);
                 }
 
-                // skip leading whitespace
+                // skip leading whitespace; 
+                // XXX note, leading whitespace implies it could be a continuation line,
+                //     so we might be making mistakes here
                 while(p1 < end && isspace(*p1) && *p1) p1++;
 
                 // parse content-length, we need that to be able to
@@ -259,19 +296,20 @@ int parse(struct parser* parser, char* buf, size_t sbuf)
 
                 // undo nullifications to allow someone else to read this garbage
 //undop3:
-                p3[-1] = ':';
+                p3[-1] = ':'; // p3 was pointing to the start of the header value, so -1 is :
 undop2:
-                *p2 = '\n';
-                if(p2WasCRLF) p2[-1] = '\r';
+                *p2 = '\n'; // p2 was pointing to the end of a header line, so it was \n
+                if(p2WasCRLF) p2[-1] = '\r'; // and if \n was preceded by \r, it was \r
 //nextheader:
 
-                // p1 now points to the next header
                 p1 = p2 + 1;
+                // p1 now points to the next header; p2/p3 no longer valid
             }
-            if(parser->state == HEADERS) return MORE;
+            if(parser->state == HEADERS) return MORE; // never encountered CRLFCRLF, ask for more
 
             parser->headers = strdup(buf + parser->ip); // dup headers, because buf may be reallocated for larger requests
             parser->ip = p1 - buf;
+            // parser->ip now points to start of body
             parser->state = BODY;
             /*fallthrough*/
         case BODY:
@@ -299,6 +337,7 @@ undop2:
                 // like a potential headache.
                 return NOT_IMPLEMENTED;
             } else if(parser->contentLength == 0) {
+                // if no contentLength, no body, we're done
                 parser->body = NULL;
                 return DONE;
             } else {
@@ -314,7 +353,7 @@ undop2:
                 } else {
                     // else, we're done; pass the parser to execute()
                     parser->body = buf + parser->ip;
-                    // body[contentLength] should not be out of bounds, we shoul dhave
+                    // body[contentLength] should not be out of bounds, we should have
                     // overallocated by a byte for this purpose specifically
                     parser->body[parser->contentLength] = '\0';
                     return DONE;

@@ -4,11 +4,11 @@ mpvkiosk
 This little project is written to allow easy control of mpv running on a
 little raspberry pi which has a monitor connected to it, but no keyboard.
 
-The project is built with two components. [*jakserver*](./jakserver.c) is the tiniest HTTP
-server, which fully delegates request handling to a subprocess running
-a single possible script. See [*jakserver(1)*](./jakserver.1) for more
-information on it. It's great for prototyping and not worrying about configuring
-a full apache or httpd.
+The project is built with two components. [*jakserver*](./jakserver.c) is the
+tiniest HTTP server, which fully delegates request handling to a subprocess
+running a single possible script. See [*jakserver(1)*](./jakserver.1) for more
+information on it. It's great for prototyping and not worrying about
+configuring a full apache or httpd.
 
 The other component is the [*handler.sh*](./handler.sh) which implements the
 "remote control" web page. This makes sure to run a daemonized *mpv(1)* and
@@ -20,9 +20,15 @@ The web interface ([*handler.sh*](./handler.sh)) is a barebones remote control.
 
 ![web player](./screenshot.png)
 
-You can paste a local path or a weblink (supported by *mpv(1)* by way of *yt-dlp(1)*) and hit `Load` to play. Alternatively, you can browse the local file system; video and audio files will have a button to start playing. Other than that, play/pause, stop, seek etc are pretty self explanatory.
+You can paste a local path or a weblink (supported by *mpv(1)* by way of
+*yt-dlp(1)*) and hit `Load` to play. Alternatively, you can browse the local
+file system; video and audio files will have a button to start playing. Other
+than that, play/pause, stop, seek etc are pretty self explanatory.
 
-The `Turn Off` button is a panic button which shuts down the remote mpv in case anything went haywire. Or, just if you want to shut down that process. The stop button merely instructs mpv to stop playing, the process continues to hang around in the background.
+The `Turn Off` button is a panic button which shuts down the remote mpv in case
+anything went haywire. Or, just if you want to shut down that process. The stop
+button merely instructs mpv to stop playing, the process continues to hang
+around in the background.
 
 There are [example handlers](./example_handlers/README.md) available if you want
 the server to do something else.
@@ -53,4 +59,6 @@ something else which is more complicated.
 There's an [example systemd unit](./mpvkiosk.service) which you can drop
 in `/etc/systemd/system/mpvkiosk.service` and turn it on at boot. In my case,
 I have *sway(1)* autostart and autologin, and it has the advantage that any
-app is effectively full screen by default. *sway* starts up as `wayland-1` by default, *gnome-shell* may start up as `wayland-0`. For X11 systems, you'd need to set `DISPLAY=:0` or whatever it was started as.
+app is effectively full screen by default. *sway* starts up as `wayland-1` by
+default, *gnome-shell* may start up as `wayland-0`. For X11 systems, you'd need
+to set `DISPLAY=:0` or whatever it was started as.

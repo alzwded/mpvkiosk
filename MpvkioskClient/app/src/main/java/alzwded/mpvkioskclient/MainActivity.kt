@@ -72,7 +72,12 @@ class MainActivity : AppCompatActivity() {
         etServerUrl.setText(currentServerUrl)
 
         setupButtons()
-        handleIncomingIntent(intent)
+
+        // Guard intent handling to only occur on fresh launches,
+        // preventing double-triggers on configuration changes (e.g. rotation)
+        if (savedInstanceState == null) {
+            handleIncomingIntent(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -119,6 +124,10 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnPrev).setOnClickListener {
             sendPostRequest("/controls/prev")
+        }
+
+        findViewById<Button>(R.id.btnProgress).setOnClickListener {
+            sendPostRequest("/controls/showprogress")
         }
 
         findViewById<Button>(R.id.btnNext).setOnClickListener {
@@ -229,7 +238,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val responseCode = connection.responseCode
-                
+
                 // 204 No Content is a successful response with no body.
                 if (responseCode == HttpURLConnection.HTTP_NO_CONTENT) {
                     return@execute
@@ -249,10 +258,10 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
                 val message = e.message ?: ""
                 // Gracefully ignore "end of stream" or EOF errors which are common with 204 responses
-                val isEofError = e is java.io.EOFException || 
-                                message.contains("end of stream", ignoreCase = true) ||
-                                message.contains("EOF", ignoreCase = true)
-                
+                val isEofError = e is java.io.EOFException ||
+                        message.contains("end of stream", ignoreCase = true) ||
+                        message.contains("EOF", ignoreCase = true)
+
                 if (!isEofError) {
                     showToastOnMain("Connection failed: $message")
                 }

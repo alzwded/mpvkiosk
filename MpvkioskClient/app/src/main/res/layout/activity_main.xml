@@ -98,6 +98,13 @@
             android:text="Play/Pause" />
 
         <Button
+            android:id="@+id/btnStop"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Stop" />
+
+        <Button
             android:id="@+id/btnNext"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -133,11 +140,12 @@
             android:text="-10s" />
 
         <Button
-            android:id="@+id/btnStop"
+            android:id="@+id/btnProgress"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Stop" />
+            android:text="Progress" />
+
 
         <Button
             android:id="@+id/btnSeekForward"

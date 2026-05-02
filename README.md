@@ -33,6 +33,9 @@ around in the background.
 There are [example handlers](./example_handlers/README.md) available if you want
 the server to do something else.
 
+There's also an [Android client](./MpvkioskClient/README.md), which allows you to more easily "share into" the app from a phone.
+
+
 Installation
 ------------
 

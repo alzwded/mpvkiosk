@@ -219,8 +219,8 @@ class MainActivity : AppCompatActivity() {
 
                 connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "POST"
-                connection.connectTimeout = 50000
-                connection.readTimeout = 50000
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
                 // Explicitly use "close" to prevent the connection from being reused, 
                 // which often causes EOFExceptions with 204 No Content responses.
                 connection.setRequestProperty("Connection", "close")

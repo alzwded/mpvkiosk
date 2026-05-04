@@ -38,10 +38,15 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import java.util.concurrent.Executors
+import androidx.lifecycle.lifecycleScope
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.android.Android
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.post
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -52,8 +57,13 @@ class MainActivity : AppCompatActivity() {
     // This will hold the active URL in memory
     private var currentServerUrl: String = ""
 
-    // A single thread executor to handle background network calls sequentially
-    private val networkExecutor = Executors.newSingleThreadExecutor()
+    // Initialize the Ktor client using the Android engine
+    private val client = HttpClient(Android) {
+        engine {
+            connectTimeout = 5_000
+            socketTimeout = 5_000
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -165,7 +175,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openBrowsePopup() {
         if (currentServerUrl.isBlank()) {
-            showToastOnMain("Please save a Server URL first")
+            Toast.makeText(this, "Please save a Server URL first", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -203,93 +213,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Executes an HTTP POST request on a background thread.
+     * Executes an HTTP POST request using Ktor tied to the Activity lifecycle.
      */
     private fun sendPostRequest(endpoint: String, params: Map<String, String>? = null) {
         if (currentServerUrl.isBlank()) {
-            showToastOnMain("Please save a Server URL first")
+            Toast.makeText(this, "Please save a Server URL first", Toast.LENGTH_SHORT).show()
             return
         }
 
-        networkExecutor.execute {
-            var connection: HttpURLConnection? = null
+        // Launch on Main dispatcher
+        lifecycleScope.launch {
             try {
                 val baseUrl = currentServerUrl.trimEnd('/')
-                val url = URL(baseUrl + endpoint)
+                val fullUrl = "$baseUrl$endpoint"
 
-                connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                // Explicitly use "close" to prevent the connection from being reused, 
-                // which often causes EOFExceptions with 204 No Content responses.
-                connection.setRequestProperty("Connection", "close")
-
-                if (!params.isNullOrEmpty()) {
-                    val postData = buildFormUrlEncodedString(params).toByteArray(Charsets.UTF_8)
-                    connection.doOutput = true
-                    connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                    connection.setFixedLengthStreamingMode(postData.size)
-                    connection.outputStream.use { os ->
-                        os.write(postData)
-                    }
+                val response = if (!params.isNullOrEmpty()) {
+                    client.submitForm(
+                        url = fullUrl,
+                        formParameters = Parameters.build {
+                            params.forEach { (key, value) -> append(key, value) }
+                        }
+                    )
                 } else {
-                    connection.setRequestProperty("Content-Length", "0")
+                    client.post(fullUrl)
                 }
 
-                val responseCode = connection.responseCode
-
-                // 204 No Content is a successful response with no body.
-                if (responseCode == HttpURLConnection.HTTP_NO_CONTENT) {
-                    return@execute
-                }
-
-                if (responseCode !in 200..299) {
-                    showToastOnMain("Server Error: $responseCode")
-                } else {
-                    // For other success codes, safely consume any response body.
-                    try {
-                        connection.inputStream.use { it.readBytes() }
-                    } catch (e: Exception) {
-                        // Ignore errors during stream consumption if the status was success.
-                    }
+                if (!response.status.isSuccess()) {
+                    Toast.makeText(this@MainActivity, "Server Error: ${response.status.value}", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
-                val message = e.message ?: ""
-                // Gracefully ignore "end of stream" or EOF errors which are common with 204 responses
-                val isEofError = e is java.io.EOFException ||
-                        message.contains("end of stream", ignoreCase = true) ||
-                        message.contains("EOF", ignoreCase = true)
-
-                if (!isEofError) {
-                    showToastOnMain("Connection failed: $message")
-                }
-            } finally {
-                connection?.disconnect()
+                Toast.makeText(this@MainActivity, "Connection failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-
-    private fun buildFormUrlEncodedString(params: Map<String, String>): String {
-        val builder = java.lang.StringBuilder()
-        for ((key, value) in params) {
-            if (builder.isNotEmpty()) builder.append('&')
-            builder.append(URLEncoder.encode(key, "UTF-8"))
-            builder.append('=')
-            builder.append(URLEncoder.encode(value, "UTF-8"))
-        }
-        return builder.toString()
-    }
-
-    private fun showToastOnMain(message: String) {
-        runOnUiThread {
-            Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        networkExecutor.shutdown()
+        client.close() // Clean up the Ktor client when the Activity is destroyed
     }
 }

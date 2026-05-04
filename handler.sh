@@ -56,6 +56,7 @@ EOT
 no_content() {
     cat <<EOT
 HTTP/1.1 204 No content.
+
 EOT
     exit 0
 }

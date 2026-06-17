@@ -206,6 +206,7 @@ body {
 <iframe name="dummyframe" id="dummyframe" style="display:none;"></iframe>
 <p>${CHROME_CONTROLS}</p>
 <p><form style="display:inline" action="/controls/volumereset" method="POST" target="dummyframe"> <input type="submit" value="Press if no sound on TV"/> </form></p>
+<p><form style="display:inline" action="/controls/swayreset" method="POST" target="dummyframe"> <input type="submit" value="Press if TV says unsupported resolution"/> </form></p>
 <p>${ON_HTML}</p>
 <hr>
 <p><form style="display:inline" action="/controls/loadfile" method="POST" target="dummyframe">
@@ -285,6 +286,14 @@ elif [[ "$REQPATH" = "/controls/volumereset" ]] ; then
     fi
 
     set_pulse_audio_hdmi
+
+    no_content
+elif [[ "$REQPATH" = "/controls/swayreset" ]] ; then
+    if [[ "$REQMETHOD" != POST ]] ; then
+        error 400 "Method not supported"
+    fi
+
+    kill -USR1 `pgrep -x sway`
 
     no_content
 elif [[ "$REQPATH" = "/chrome/startstop" ]] ; then
